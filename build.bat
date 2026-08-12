@@ -2,18 +2,33 @@
 setlocal enabledelayedexpansion
 
 :: ── Find VS 2022 ──────────────────────────────────────────────────────────────
+:: Original used  -version "[17,18)"  inside a  for /f  backtick clause.
+:: The ")" inside [17,18) prematurely closes the for-clause in cmd.exe,
+:: producing "C:\Program is not recognized".
+:: Replacing with "17.*" -> vswhere rejects it ("not a valid version range").
+:: Fix: run vswhere OUTSIDE for /f, capture to temp file, then read it.
+::      This avoids the cmd parser ever seeing the ")".
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
     echo [ERROR] vswhere.exe not found. Is Visual Studio 2022 installed?
     pause & exit /b 1
 )
 
-for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -version "[17,18)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
-    set "VS_PATH=%%i"
+set "VS_WHERE_OUT=%TEMP%\screamapi_vswhere.txt"
+"%VSWHERE%" -latest -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > "%VS_WHERE_OUT%" 2>nul
+
+set "VS_PATH="
+for /f "usebackq delims=" %%i in ("%VS_WHERE_OUT%") do (
+    if not defined VS_PATH set "VS_PATH=%%i"
 )
+del "%VS_WHERE_OUT%" >nul 2>nul
 
 if not defined VS_PATH (
     echo [ERROR] Visual Studio 2022 not found.
+    echo [ERROR] Make sure you installed the "Desktop development with C++" workload,
+    echo [ERROR] which provides the Microsoft.VisualStudio.Component.VC.Tools.x86.x64 component.
+    echo [ERROR] Run this to diagnose:
+    echo [ERROR]   "%VSWHERE%" -latest -version "[17.0,18.0)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     pause & exit /b 1
 )
 
