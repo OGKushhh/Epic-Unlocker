@@ -516,7 +516,15 @@ void DrawAchievementList() {
                 if (achievement.UnlockState == UnlockState::Locked) rightContentHeight += 28.0f;
                 else rightContentHeight += 20.0f;
                 
-                float rightX = ImGui::GetWindowWidth() - rightColumnWidth;
+                // BUGFIX: use rowMin.x + rowWidth (content-region right edge, excludes
+                // vertical scrollbar) instead of ImGui::GetWindowWidth() (which includes
+                // the scrollbar). Keeps the right column aligned to the visible right
+                // edge, consistent with the rowWidth/textWidth fixes above. Functionally
+                // the previous GetWindowWidth() form worked because rightColumnWidth
+                // (85px) is wider than the scrollbar (~10px), but it was stylistically
+                // inconsistent and would visibly slide the right column under the
+                // scrollbar at narrow window widths.
+                float rightX = rowMin.x + rowWidth - rightColumnWidth;
                 float rightY = rowMin.y + (rowHeight - rightContentHeight) / 2.0f;
                 ImGui::SetCursorScreenPos(ImVec2(rightX, rightY));
 
