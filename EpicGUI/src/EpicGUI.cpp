@@ -31,25 +31,27 @@
 #endif
 
 // ── Colours ───────────────────────────────────────────────────────────────────
-#define C_BG        RGB(13,  15,  20)
-#define C_SURFACE   RGB(20,  24,  33)
-#define C_SURFACE2  RGB(28,  33,  46)
-#define C_SURFACE3  RGB(36,  42,  58)
-#define C_BORDER    RGB(48,  56,  76)
-#define C_BORDER2   RGB(60,  70,  95)
-#define C_TEXT      RGB(218, 224, 236)
-#define C_TEXTDIM   RGB(100, 112, 140)
-#define C_TEXTSUB   RGB(140, 152, 178)
-#define C_ACCENT    RGB(56,  128, 244)
-#define C_ACCENT2   RGB(86,  156, 255)
-#define C_ACCENTDIM RGB(36,  80,  160)
-#define C_GREEN     RGB(46,  196, 112)
+// Palette: dark + achievement-gold accent (no purple)
+// Base: #1a1a1a bg / #2a2a2a panels / #e0e0e0 text / #3a3a3a borders
+// Accent: #c9a227 achievement gold (buttons, highlights, section headers)
+#define C_BG        RGB( 26,  26,  26)
+#define C_SURFACE   RGB( 42,  42,  42)
+#define C_SURFACE2  RGB( 50,  50,  50)
+#define C_SURFACE3  RGB( 58,  58,  58)
+#define C_BORDER    RGB( 58,  58,  58)
+#define C_BORDER2   RGB( 80,  80,  80)
+#define C_TEXT      RGB(224, 224, 224)
+#define C_TEXTDIM   RGB(130, 130, 130)
+#define C_TEXTSUB   RGB(170, 170, 170)
+#define C_ACCENT    RGB(201, 162,  39)
+#define C_ACCENT2   RGB(230, 190,  70)
+#define C_ACCENTDIM RGB(120,  95,  25)
+#define C_GREEN     RGB( 46, 196, 112)
 #define C_YELLOW    RGB(248, 188,  32)
 #define C_RED       RGB(236,  64,  64)
-#define C_PURPLE    RGB(162,  80,  244)
+#define C_TEAL      RGB(75,  175, 195)
 #define C_ORANGE    RGB(246, 112,  20)
-#define C_HEADER    RGB(16,  20,  28)
-
+#define C_HEADER    RGB( 20,  20,  20)
 // ── Control IDs ───────────────────────────────────────────────────────────────
 #define IDC_LIST            100
 #define IDC_UNLOCK          101
@@ -84,7 +86,7 @@
 #define STATUS_H  26
 #define BTN_H     32
 #define EDIT_H    30
-#define PAD       10
+#define PAD       12
 
 // ── Log limits ────────────────────────────────────────────────────────────────
 static const int LOG_MAX_LINES = 20000;
@@ -266,7 +268,7 @@ static void UpdateDlcStats() {
 static COLORREF LogLineColor(const std::wstring& line) {
     if (line.find(L"[ERROR]") != std::wstring::npos) return C_RED;
     if (line.find(L"[WARN]")  != std::wstring::npos) return C_YELLOW;
-    if (line.find(L"[DLC]")   != std::wstring::npos) return C_PURPLE;
+    if (line.find(L"[DLC]")   != std::wstring::npos) return C_TEAL;
     if (line.find(L"[ACH]")   != std::wstring::npos) return C_GREEN;
     if (line.find(L"[OVRLY]") != std::wstring::npos) return C_ORANGE;
     if (line.find(L"[HOOK]")  != std::wstring::npos) return C_ACCENT2;
@@ -934,7 +936,7 @@ static void HandleDlcCatalog(const uint8_t* data, uint32_t size) {
     if (!g_dlcTitles.empty()) {
         wchar_t sb[128];
         swprintf_s(sb, L"Received %d DLC titles from Epic catalog", (int)g_dlcTitles.size());
-        PushToast(L"DLC Catalog received", sb, C_PURPLE);
+        PushToast(L"DLC Catalog received", sb, C_TEAL);
     }
 }
 
@@ -1256,7 +1258,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         // Row height via shared imagelist
-        HIMAGELIST hil = ImageList_Create(1, 24, ILC_COLOR, 1, 1);
+        HIMAGELIST hil = ImageList_Create(1, 26, ILC_COLOR, 1, 1);
         ListView_SetImageList(g_list,    hil, LVSIL_SMALL);
         ListView_SetImageList(g_dlcList, hil, LVSIL_SMALL);
 

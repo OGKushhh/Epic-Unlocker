@@ -297,7 +297,17 @@ EOS_HEcom EOS_CALL Platform_GetEcomInterface(EOS_HPlatform Handle) {
 
 EOS_HStats EOS_CALL Platform_GetStatsInterface(EOS_HPlatform Handle) {
     auto result = Original::Platform_GetStatsInterface(Handle);
-    if (result) Logger::debug("[HOOK] EOS_Platform_GetStatsInterface -> %p", result);
+    // Runtime Stats interface availability check.
+    // - Non-null: game has Stats enabled in its EOS config; stat-gated
+    //   achievements can be unlocked via EOS_Stats_IngestStat.
+    // - Null: game disabled Stats (or SDK is too old to expose the
+    //   interface). Stat-gated achievements will not unlock through us.
+    // See also the static SDK check logged once at DLL load in ScreamAPI.cpp.
+    if (result) {
+        Logger::info("[STATS] EOS_Platform_GetStatsInterface -> %p (Stats interface available)", result);
+    } else {
+        Logger::warn("[STATS] EOS_Platform_GetStatsInterface -> NULL (Stats interface NOT available - stat-gated achievements may not unlock)");
+    }
     return result;
 }
 

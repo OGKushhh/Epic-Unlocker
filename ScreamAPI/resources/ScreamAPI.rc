@@ -72,7 +72,7 @@ BEGIN
             VALUE "FileVersion", "1.18.1.2"
             VALUE "InternalName", "ScreamAPI.dll"
             VALUE "LegalCopyright", "Fuck the copyright >:D"
-            VALUE "OriginalFilename", "Release 1.5"
+            VALUE "OriginalFilename", "ScreamAPI.dll"
             VALUE "ProductName", "ScreamAPI"
             VALUE "ProductVersion", "1.18.1.2"
         END

@@ -71,6 +71,25 @@ namespace ScreamAPI
         PipeServer::SetLogPath(logPath.generic_wstring());
 
         Logger::info("Epic Unlocker v" SCREAM_API_VERSION);
+
+        // ── Static SDK capability check (runs once at DLL load) ───────
+        // Logs the EOS SDK header version this DLL was compiled against,
+        // and whether stat-gated achievements are supported at the API level.
+        // This is necessary-but-not-sufficient: a runtime null return from
+        // EOS_Platform_GetStatsInterface means the game disabled Stats in its
+        // EOS config (see the runtime hook in eos_hooks.cpp).
+        Logger::info("EOS SDK (headers): v%d.%d.%d.%d",
+                     EOS_MAJOR_VERSION, EOS_MINOR_VERSION,
+                     EOS_PATCH_VERSION, EOS_HOTFIX_VERSION);
+#if defined(EOS_ACHIEVEMENTS_STATTHRESHOLDS_API_LATEST)
+        Logger::info("Stat-gated achievements: SUPPORTED (SDK headers expose "
+                     "EOS_Achievements_StatThresholds, API v%d)",
+                     EOS_ACHIEVEMENTS_STATTHRESHOLDS_API_LATEST);
+#else
+        Logger::warn("Stat-gated achievements: NOT SUPPORTED (SDK headers "
+                     "predate EOS_Achievements_StatThresholds - upgrade SDK)");
+#endif
+
         Logger::debug("DLL init function called");
         Logger::debug("EnableOverlay: %s", Config::EnableOverlay() ? "true" : "false");
 
