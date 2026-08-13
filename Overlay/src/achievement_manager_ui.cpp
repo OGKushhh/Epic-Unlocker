@@ -452,7 +452,17 @@ void DrawAchievementList() {
                 ImGui::PushID(idx);
 
                 ImVec2 rowMin = ImVec2(startPos.x, startPos.y + (row - startIdx) * rowHeight);
-                ImVec2 rowMax = ImVec2(rowMin.x + ImGui::GetWindowWidth(), rowMin.y + rowHeight);
+                // BUGFIX: use GetContentRegionAvail to get the actual visible content width
+                // (window width MINUS vertical scrollbar). The previous code used
+                // ImGui::GetWindowWidth() which doesn't subtract the scrollbar — when the
+                // vertical scrollbar appeared (AlwaysVerticalScrollbar flag), rows were
+                // drawn wider than the visible area, extending the window's ScrollMax.x
+                // past zero and triggering an unwanted horizontal scrollbar. When the
+                // user scrolled vertically and the list was short or at the bottom,
+                // ImGui redirected the wheel to the horizontal scrollbar, producing the
+                // "scroll moves overlay horizontally" symptom.
+                float rowWidth = ImGui::GetContentRegionAvail().x;
+                ImVec2 rowMax = ImVec2(rowMin.x + rowWidth, rowMin.y + rowHeight);
                 ImU32 bgColor = (row % 2 == 0) ? IM_COL32(30, 30, 35, 230) : IM_COL32(25, 25, 30, 230);
                 drawList->AddRectFilled(rowMin, rowMax, bgColor, 4.0f);
 
@@ -476,7 +486,10 @@ void DrawAchievementList() {
                 float rightColumnWidth = 85.0f;
                 float iconWidth = 50.0f;
                 float padding = 15.0f;
-                float textWidth = ImGui::GetWindowWidth() - iconWidth - rightColumnWidth - padding;
+                // BUGFIX: use GetContentRegionAvail (matches the rowWidth fix above)
+                // so text wrap respects the scrollbar width and doesn't push past the
+                // right edge of the visible content region.
+                float textWidth = ImGui::GetContentRegionAvail().x - iconWidth - rightColumnWidth - padding;
                 if (textWidth < 100.0f) textWidth = 100.0f;
 
                 ImGui::BeginGroup();

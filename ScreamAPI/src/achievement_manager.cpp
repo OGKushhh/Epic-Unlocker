@@ -11,6 +11,7 @@
 #include <thread>
 #include <mutex>
 #include <vector>
+#include <cstdint>        // uintptr_t for tagged-ClientData convention
 
 using namespace Util;
 
@@ -138,10 +139,38 @@ void findAchievement(const char* achievementID, std::function<void(Overlay_Achie
 // Static callbacks for achievement operations
 // ----------------------------------------------------------------------------
 
+// Tagged-ClientData convention for stat-ingest follow-up calls.
+// When the belt-and-suspenders direct-unlock call is made after a successful
+// stat ingest (inside OnIngestStatComplete), we set bit 0 of the ClientData
+// pointer to mark it as a "stat-ingest follow-up" call. This lets
+// OnUnlockAchievementsComplete tolerate EOS_NotConfigured for that specific
+// call, because the server hasn't yet processed the stat crossing.
+//
+// Why this matters: without the tag, OnUnlockAchievementsComplete would
+// unconditionally reset the achievement state to Locked on any non-Success
+// result. For stat-gated achievements, the belt-and-suspenders call typically
+// returns EOS_NotConfigured (server hasn't evaluated the threshold crossing
+// yet), which would cause both the EpicGUI and the ImGui overlay to briefly
+// flicker from "Unlocking" back to "Locked" before the server-side unlock
+// notification arrives ~10-30s later and flips it to "Unlocked".
+//
+// With the tag, the handler keeps the state in Unlocking for the
+// EOS_NotConfigured case, eliminating the flicker in both UIs.
 static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* Data) {
-    auto achievement = (Overlay_Achievement*)Data->ClientData;
+    bool isStatIngestFollowUp = ((uintptr_t)Data->ClientData & 1) != 0;
+    auto achievement = (Overlay_Achievement*)((uintptr_t)Data->ClientData & ~(uintptr_t)1);
     if (Data->ResultCode == EOS_EResult::EOS_Success) {
         Logger::info("Successfully unlocked the achievement: %s", achievement->AchievementId);
+        // State will be flipped to Unlocked by OnAchievementsUnlockedV2 when the
+        // server-side notification arrives. Leave it as Unlocking in the meantime.
+    } else if (isStatIngestFollowUp && Data->ResultCode == EOS_EResult::EOS_NotConfigured) {
+        // Expected case: stat ingest succeeded, but server hasn't evaluated the
+        // threshold crossing yet. Keep state as Unlocking; the server-side
+        // unlock notification (OnAchievementsUnlockedV2) will flip it to
+        // Unlocked within ~10-30 seconds. This prevents the GUI/overlay
+        // flicker from Locked -> Unlocking -> Unlocked.
+        Logger::info("[STAT] Direct unlock returned EOS_NotConfigured (expected) - waiting for server-side evaluation: %s",
+            achievement->AchievementId);
     } else {
         achievement->UnlockState = UnlockState::Locked;
         Logger::error("Failed to unlock the achievement: %s. Error string: %s",
@@ -199,7 +228,14 @@ static void EOS_CALL OnIngestStatComplete(const EOS_Stats_IngestStatCompleteCall
             &achievement->AchievementId,
             1
         };
-        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
+        // Tag the ClientData pointer with bit 0 = 1 to mark this as a stat-ingest
+        // follow-up call. OnUnlockAchievementsComplete will detect the tag and
+        // tolerate EOS_NotConfigured (which is the expected result here, since
+        // the server hasn't yet processed the stat crossing). This prevents the
+        // GUI/overlay from flickering back to "Locked" before the server-side
+        // unlock notification arrives.
+        void* taggedClientData = (void*)((uintptr_t)achievement | 1);
+        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, taggedClientData, OnUnlockAchievementsComplete);
     } else {
         achievement->UnlockState = UnlockState::Locked;
         Logger::error("[STAT] Stat ingest FAILED for achievement: %s. Error: %s",

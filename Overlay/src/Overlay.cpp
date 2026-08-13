@@ -122,8 +122,15 @@ LRESULT WINAPI WindowProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         }
     }
 
-    // Accumulate wheel delta — drained in UpdateImGuiMouseInput
-    if (uMsg == WM_MOUSEWHEEL) {
+    // Accumulate wheel delta — drained in UpdateImGuiMouseInput.
+    // BUGFIX: only accumulate when the overlay is actually open. The previous
+    // code accumulated unconditionally, so all in-game scroll events (camera
+    // zoom, weapon switch, etc.) built up in g_MouseWheelDelta while the
+    // overlay was closed. When the user opened the overlay, the next
+    // UpdateImGuiMouseInput() drained the entire accumulated value as a single
+    // AddMouseWheelEvent(0, huge_delta), causing the achievement list to jump
+    // to a random scroll position on overlay open.
+    if (bShowAchievementManager && uMsg == WM_MOUSEWHEEL) {
         g_MouseWheelDelta += (float)GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
         return 0;
     }
