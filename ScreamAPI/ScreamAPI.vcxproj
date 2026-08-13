@@ -98,6 +98,7 @@
     <ClCompile Include="src\eos-impl\eos_ecom_transactions.cpp" />
     <ClCompile Include="src\eos_hooks.cpp" />
     <ClCompile Include="src\eos-impl\eos_sdk.cpp" />
+    <ClCompile Include="src\eos-impl\eos_stats.cpp" />
     <ClCompile Include="src\pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

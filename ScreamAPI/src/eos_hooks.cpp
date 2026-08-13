@@ -35,6 +35,8 @@ namespace Original {
     decltype(&EOS_Platform_GetAuthInterface) Platform_GetAuthInterface = nullptr;
     decltype(&EOS_Platform_GetAchievementsInterface) Platform_GetAchievementsInterface = nullptr;
     decltype(&EOS_Platform_GetEcomInterface) Platform_GetEcomInterface = nullptr;
+    // Stats interface (for stat-gated achievement unlocking)
+    decltype(&EOS_Platform_GetStatsInterface) Platform_GetStatsInterface = nullptr;
     // Optional
     decltype(&EOS_Platform_GetUIInterface) Platform_GetUIInterface = nullptr;
 
@@ -82,6 +84,7 @@ static std::string GetDecoratedName(const char* baseName) {
     else if (strcmp(baseName, "EOS_Platform_GetAuthInterface") == 0) ss << "4";
     else if (strcmp(baseName, "EOS_Platform_GetAchievementsInterface") == 0) ss << "4";
     else if (strcmp(baseName, "EOS_Platform_GetEcomInterface") == 0) ss << "4";
+    else if (strcmp(baseName, "EOS_Platform_GetStatsInterface") == 0) ss << "4";
     else if (strcmp(baseName, "EOS_Platform_GetUIInterface") == 0) ss << "4";
     else if (strcmp(baseName, "EOS_Achievements_QueryDefinitions") == 0) ss << "16";
     else if (strcmp(baseName, "EOS_Achievements_QueryPlayerAchievements") == 0) ss << "16";
@@ -289,6 +292,12 @@ EOS_HAchievements EOS_CALL Platform_GetAchievementsInterface(EOS_HPlatform Handl
 EOS_HEcom EOS_CALL Platform_GetEcomInterface(EOS_HPlatform Handle) {
     auto result = Original::Platform_GetEcomInterface(Handle);
     if (result) Logger::debug("[HOOK] EOS_Platform_GetEcomInterface -> %p", result);
+    return result;
+}
+
+EOS_HStats EOS_CALL Platform_GetStatsInterface(EOS_HPlatform Handle) {
+    auto result = Original::Platform_GetStatsInterface(Handle);
+    if (result) Logger::debug("[HOOK] EOS_Platform_GetStatsInterface -> %p", result);
     return result;
 }
 
@@ -638,6 +647,7 @@ bool InitializeHooks(HMODULE originalDLL) {
     INSTALL_HOOK(originalDLL, EOS_Platform_GetAuthInterface, Hooks::Platform_GetAuthInterface, Original::Platform_GetAuthInterface);
     INSTALL_HOOK(originalDLL, EOS_Platform_GetAchievementsInterface, Hooks::Platform_GetAchievementsInterface, Original::Platform_GetAchievementsInterface);
     INSTALL_HOOK(originalDLL, EOS_Platform_GetEcomInterface, Hooks::Platform_GetEcomInterface, Original::Platform_GetEcomInterface);
+    INSTALL_HOOK(originalDLL, EOS_Platform_GetStatsInterface, Hooks::Platform_GetStatsInterface, Original::Platform_GetStatsInterface);
     INSTALL_HOOK(originalDLL, EOS_Platform_GetUIInterface, Hooks::Platform_GetUIInterface, Original::Platform_GetUIInterface);
 
     Logger::info("[HOOK] Installing Achievement hooks...");

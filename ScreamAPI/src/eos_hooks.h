@@ -6,6 +6,7 @@
 #include "eos-sdk/eos_auth.h"
 #include "eos-sdk/eos_connect.h"
 #include "eos-sdk/eos_ecom.h"
+#include "eos-sdk/eos_stats.h"
 #include "MinHook.h"
 
 namespace EOS_Hooks {
@@ -20,6 +21,8 @@ namespace Original {
     extern decltype(&EOS_Platform_GetAuthInterface) Platform_GetAuthInterface;
     extern decltype(&EOS_Platform_GetAchievementsInterface) Platform_GetAchievementsInterface;
     extern decltype(&EOS_Platform_GetEcomInterface) Platform_GetEcomInterface;
+    // Stats interface (for stat-gated achievement unlocking)
+    extern decltype(&EOS_Platform_GetStatsInterface) Platform_GetStatsInterface;
     // Optional platform function
     extern decltype(&EOS_Platform_GetUIInterface) Platform_GetUIInterface;
     
@@ -60,6 +63,8 @@ namespace Hooks {
     EOS_HAuth EOS_CALL Platform_GetAuthInterface(EOS_HPlatform Handle);
     EOS_HAchievements EOS_CALL Platform_GetAchievementsInterface(EOS_HPlatform Handle);
     EOS_HEcom EOS_CALL Platform_GetEcomInterface(EOS_HPlatform Handle);
+    // Stats interface (for stat-gated achievement unlocking)
+    EOS_HStats EOS_CALL Platform_GetStatsInterface(EOS_HPlatform Handle);
     // Optional platform function
     EOS_HUI EOS_CALL Platform_GetUIInterface(EOS_HPlatform Handle);
     

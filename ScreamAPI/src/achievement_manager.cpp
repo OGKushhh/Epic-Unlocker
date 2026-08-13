@@ -3,12 +3,14 @@
 #include "ScreamAPI.h"
 #include "util.h"
 #include "eos-sdk/eos_achievements.h"
+#include "eos-sdk/eos_stats.h"
 #include "PipeServer.h"
 #include "Overlay.h"
 #include <future>
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <vector>
 
 using namespace Util;
 
@@ -22,6 +24,21 @@ Achievements achievements;
 static std::mutex g_achMutex;  // guards achievements vector
 
 std::mutex& GetAchievementsMutex() { return g_achMutex; }
+
+// Free heap-allocated stat threshold arrays in an achievement vector.
+// Called before clearing/repopulating the achievements list to prevent leaks.
+static void freeAchievementStatThresholds(Achievements& vec) {
+    for (auto& ach : vec) {
+        if (ach.StatThresholds != nullptr && ach.StatThresholdsCount > 0) {
+            for (uint32_t j = 0; j < ach.StatThresholdsCount; j++) {
+                delete[] ach.StatThresholds[j].Name;
+            }
+            delete[] ach.StatThresholds;
+            ach.StatThresholds = nullptr;
+            ach.StatThresholdsCount = 0;
+        }
+    }
+}
 
 // Track if we've already retried due to missing user
 static std::atomic<bool> waitingForUser{false};
@@ -149,9 +166,128 @@ static void EOS_CALL OnAchievementsUnlocked(const EOS_Achievements_OnAchievement
     }
 }
 
+// ----------------------------------------------------------------------------
+// Stat-gated achievement unlock via EOS_Stats_IngestStat
+// ----------------------------------------------------------------------------
+// Stat-gated achievements (StatThresholdsCount > 0) cannot be unlocked via
+// EOS_Achievements_UnlockAchievements — the SDK returns EOS_NotConfigured
+// because the stat dependency is not satisfied. To unlock them, we must
+// ingest the stat value past its threshold via EOS_Stats_IngestStat, which
+// triggers a server-side achievement unlock evaluation.
+//
+// Flow:
+//   1. Build EOS_Stats_IngestData array from achievement->StatThresholds
+//   2. Call EOS_Stats_IngestStat with IngestAmount = Threshold
+//   3. On success, optionally call EOS_Achievements_UnlockAchievements as a
+//      belt-and-suspenders fallback (the server usually auto-unlocks)
+// ----------------------------------------------------------------------------
+
+static void EOS_CALL OnIngestStatComplete(const EOS_Stats_IngestStatCompleteCallbackInfo* Data) {
+    auto achievement = (Overlay_Achievement*)Data->ClientData;
+
+    if (Data->ResultCode == EOS_EResult::EOS_Success) {
+        Logger::info("[STAT] Stat ingest succeeded for achievement: %s", achievement->AchievementId);
+        Logger::info("[STAT] Server will evaluate achievement unlock (may take a few seconds)");
+
+        // As a belt-and-suspenders approach, also issue a direct unlock request.
+        // The server may have already auto-unlocked the achievement based on the
+        // stat crossing its threshold, but this covers cases where the server
+        // requires an explicit unlock call.
+        EOS_Achievements_UnlockAchievementsOptions Options = {
+            EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST,
+            getProductUserId(),
+            &achievement->AchievementId,
+            1
+        };
+        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
+    } else {
+        achievement->UnlockState = UnlockState::Locked;
+        Logger::error("[STAT] Stat ingest FAILED for achievement: %s. Error: %s",
+            achievement->AchievementId,
+            EOS_EResult_ToString(Data->ResultCode));
+        Logger::error("[STAT] The achievement may remain locked. Check ScreamAPI.log for details.");
+    }
+}
+
+static void unlockAchievementViaStatIngest(Overlay_Achievement* achievement) {
+    Logger::info("[STAT] Attempting stat-gated unlock for: %s (StatThresholdsCount=%u)",
+        achievement->AchievementId, achievement->StatThresholdsCount);
+
+    auto hStats = getHStats();
+    if (hStats == nullptr) {
+        Logger::error("[STAT] Cannot ingest stat — EOS Stats interface is NULL");
+        Logger::error("[STAT] The game may not have initialized the Stats subsystem.");
+        Logger::error("[STAT] Falling back to direct unlock (will likely fail with EOS_NotConfigured)");
+
+        // Fall back to direct unlock — it will fail, but the error message
+        // will be consistent with the previous behavior.
+        EOS_Achievements_UnlockAchievementsOptions Options = {
+            EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST,
+            getProductUserId(),
+            &achievement->AchievementId,
+            1
+        };
+        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
+        return;
+    }
+
+    auto userId = getProductUserId();
+    if (userId == nullptr) {
+        Logger::error("[STAT] Cannot ingest stat — user not logged in");
+        achievement->UnlockState = UnlockState::Locked;
+        return;
+    }
+
+    // Build ingest data array — one entry per stat threshold
+    // Use a vector to ensure the array outlives the EOS_Stats_IngestStat call
+    std::vector<EOS_Stats_IngestData> ingestData;
+    ingestData.reserve(achievement->StatThresholdsCount);
+
+    for (uint32_t i = 0; i < achievement->StatThresholdsCount; i++) {
+        auto& threshold = achievement->StatThresholds[i];
+        // Ingest exactly the threshold amount. Since the stat is typically at 0
+        // for bugged achievements, this pushes it to exactly the threshold value.
+        // The EOS backend evaluates stat >= threshold, so this is sufficient.
+        // Using threshold (not threshold+1) to avoid overshooting on MIN-type stats.
+        int32_t ingestAmount = threshold.Threshold;
+
+        EOS_Stats_IngestData data;
+        data.ApiVersion = EOS_STATS_INGESTDATA_API_LATEST;
+        data.StatName = threshold.Name;
+        data.IngestAmount = ingestAmount;
+        ingestData.push_back(data);
+
+        Logger::info("[STAT]   Ingesting stat '%s' += %d (threshold: %d)",
+            threshold.Name, ingestAmount, threshold.Threshold);
+    }
+
+    EOS_Stats_IngestStatOptions options;
+    options.ApiVersion = EOS_STATS_INGESTSTAT_API_LATEST;
+    options.LocalUserId = userId;
+    options.Stats = ingestData.data();
+    options.StatsCount = (uint32_t)ingestData.size();
+    options.TargetUserId = userId;
+
+    Logger::info("[STAT] Submitting EOS_Stats_IngestStat for %u stat(s)...", options.StatsCount);
+    EOS_Stats_IngestStat(hStats, &options, achievement, OnIngestStatComplete);
+}
+
 void unlockAchievement(Overlay_Achievement* achievement) {
     achievement->UnlockState = UnlockState::Unlocking;
 
+    // ── Stat-gated achievements ───────────────────────────────────────────
+    // If the achievement has stat thresholds, we must ingest the stat(s) past
+    // their threshold(s) to trigger a server-side unlock. Direct unlock via
+    // EOS_Achievements_UnlockAchievements returns EOS_NotConfigured for these.
+    // ─────────────────────────────────────────────────────────────────────
+    if (achievement->StatThresholdsCount > 0 && achievement->StatThresholds != nullptr) {
+        Logger::info("[ACH] Achievement '%s' is stat-gated (%u threshold(s)) — using stat ingest path",
+            achievement->AchievementId, achievement->StatThresholdsCount);
+        unlockAchievementViaStatIngest(achievement);
+        return;
+    }
+
+    // ── Direct unlock path (non-stat-gated achievements) ──────────────────
     EOS_Achievements_UnlockAchievementsOptions Options = {
         EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST,
         getProductUserId(),
@@ -265,6 +401,8 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
     Logger::debug("[ACH] Achievement definitions query succeeded");
 
     // Clear existing achievements before repopulating (in case of retry)
+    // Free stat threshold arrays first to prevent memory leak on refresh.
+    freeAchievementStatThresholds(achievements);
     achievements.clear();
 
     static EOS_Achievements_GetAchievementDefinitionCountOptions GetCountOptions{
@@ -290,6 +428,21 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
 
                 printAchievementDefinition(OutDefinition);
 
+                // Capture stat thresholds for stat-gated achievement unlocking.
+                // These are used by unlockAchievementViaStatIngest() to ingest
+                // stat values past their thresholds via EOS_Stats_IngestStat.
+                StatThreshold* statThresholds = nullptr;
+                uint32_t statThresholdsCount = OutDefinition->StatThresholdsCount;
+                if (statThresholdsCount > 0 && OutDefinition->StatThresholds != nullptr) {
+                    statThresholds = new StatThreshold[statThresholdsCount];
+                    for (uint32_t j = 0; j < statThresholdsCount; j++) {
+                        statThresholds[j].Name = copy_c_string(OutDefinition->StatThresholds[j].Name);
+                        statThresholds[j].Threshold = OutDefinition->StatThresholds[j].Threshold;
+                    }
+                    Logger::debug("[ACH]   Captured %u stat threshold(s) for '%s'",
+                        statThresholdsCount, OutDefinition->AchievementId);
+                }
+
                 achievements.push_back(
                     {
                         copy_c_string(OutDefinition->AchievementId),
@@ -298,7 +451,9 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
                         copy_c_string(OutDefinition->UnlockedDescription),
                         copy_c_string(OutDefinition->UnlockedDisplayName),
                         copy_c_string(OutDefinition->UnlockedIconURL),
-                        nullptr
+                        nullptr,
+                        statThresholdsCount,
+                        statThresholds
                     }
                 );
 
@@ -321,6 +476,17 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
             continue;
         }
 
+        // Capture stat thresholds (deprecated V1 struct also has these fields)
+        StatThreshold* statThresholds = nullptr;
+        uint32_t statThresholdsCount = (uint32_t)OutDefinition->StatThresholdsCount;
+        if (statThresholdsCount > 0 && OutDefinition->StatThresholds != nullptr) {
+            statThresholds = new StatThreshold[statThresholdsCount];
+            for (uint32_t j = 0; j < statThresholdsCount; j++) {
+                statThresholds[j].Name = copy_c_string(OutDefinition->StatThresholds[j].Name);
+                statThresholds[j].Threshold = OutDefinition->StatThresholds[j].Threshold;
+            }
+        }
+
         achievements.push_back(
             {
                 copy_c_string(OutDefinition->AchievementId),
@@ -329,7 +495,9 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
                 copy_c_string(OutDefinition->CompletionDescription),
                 copy_c_string(OutDefinition->DisplayName),
                 copy_c_string(OutDefinition->UnlockedIconId),
-                nullptr
+                nullptr,
+                statThresholdsCount,
+                statThresholds
             }
         );
 
@@ -497,6 +665,8 @@ void refresh() {
     waitingForUser = false;
 
     // Clear existing achievements – the query callback will repopulate
+    // Free stat threshold arrays first to prevent memory leak on refresh.
+    freeAchievementStatThresholds(achievements);
     achievements.clear();
 
     // Start a fresh definitions query
