@@ -24,7 +24,9 @@
   <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/total?label=downloads&color=brightgreen" alt="Total Downloads">
   <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/latest/total?label=downloads%40latest&color=brightgreen" alt="Latest Release Downloads">
 </p>
-
+<p align="center">
+<a href="https://ko-fi.com/abdobest"><img src="https://img.shields.io/badge/Ko--fi-Support%20Me-red?logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
+  
 ---
 
 ## 🔥 What is Epic Unlocker?
