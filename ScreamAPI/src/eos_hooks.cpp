@@ -164,6 +164,11 @@ struct PendingUnlock {
     EOS_Achievements_UnlockAchievementsOptions Options;
     void* ClientData;
     EOS_Achievements_OnUnlockAchievementsCompleteCallback CompletionDelegate;
+    // Deep-copied storage so Options.AchievementIds stays valid after
+    // the caller returns. id_storage owns the string memory; id_array
+    // is the const char** array pointing into id_storage.
+    std::vector<std::string>  id_storage;
+    std::vector<const char*>  id_array;
 };
 static std::vector<PendingUnlock> g_pendingUnlocks;
 static std::mutex g_pendingMutex;
@@ -356,7 +361,26 @@ void EOS_CALL Achievements_UnlockAchievements(EOS_HAchievements Handle, const EO
         Logger::warn("[HOOK] Achievements not configured yet – forcing configuration and postponing unlock");
         ForceAchievementsConfiguration(Handle, Options->UserId);
         std::lock_guard<std::mutex> lock(g_pendingMutex);
-        g_pendingUnlocks.push_back({Handle, *Options, ClientData, CompletionDelegate});
+        PendingUnlock p;
+        p.Handle             = Handle;
+        p.Options            = *Options;          // shallow copy is fine for ApiVersion/UserId/Count
+        p.ClientData         = ClientData;
+        p.CompletionDelegate = CompletionDelegate;
+        // Deep-copy AchievementIds: the caller's array is freed once we
+        // return, so we must own both the string storage and the pointer
+        // array that Options.AchievementIds will point at when
+        // RetryPendingUnlocks() replays the call later.
+        p.id_storage.reserve(Options->AchievementsCount);
+        p.id_array.reserve(Options->AchievementsCount);
+        for (uint32_t i = 0; i < Options->AchievementsCount; i++) {
+            p.id_storage.emplace_back(Options->AchievementIds[i]);
+        }
+        for (auto& s : p.id_storage) {
+            p.id_array.push_back(s.c_str());
+        }
+        p.Options.AchievementIds    = p.id_array.data();
+        p.Options.AchievementsCount = (uint32_t)p.id_array.size();
+        g_pendingUnlocks.push_back(std::move(p));
         return;
     }
 
@@ -379,6 +403,9 @@ EOS_NotificationId EOS_CALL Achievements_AddNotifyAchievementsUnlocked(EOS_HAchi
 // ============================================================================
 
 // Pre-built ownership list for the ForceSuccess fallback path.
+// g_ownership_id_storage owns the string memory; g_ownerships[i].Id points
+// into it. Both are cleared together on every QueryOwnership call - no leak.
+static std::vector<std::string>            g_ownership_id_storage;
 static std::vector<EOS_Ecom_ItemOwnership> g_ownerships;
 
 // Entitlement state — rebuilt on every QueryEntitlements call.
@@ -424,18 +451,24 @@ void EOS_CALL Ecom_QueryOwnership(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershi
     EnsureCatalogFetched();
     auto catalog = GetCatalogSnapshot();
 
+    g_ownership_id_storage.clear();
     g_ownerships.clear();
     if (Options) {
         Logger::dlc("[HOOK] Game queried ownership of %d item(s):", Options->CatalogItemIdCount);
+        g_ownership_id_storage.reserve(Options->CatalogItemIdCount);
+        g_ownerships.reserve(Options->CatalogItemIdCount);
         for (uint32_t i = 0; i < Options->CatalogItemIdCount; i++) {
             const char* id = Options->CatalogItemIds[i];
             auto it = catalog.find(id);
             const char* title = (it != catalog.end()) ? it->second.c_str() : "Unknown Title";
             Logger::dlc("[HOOK]   Item ID: %s (\"%s\")", id, title);
             bool unlocked = Config::IsDlcUnlocked(std::string(id), true);
+            // Store the id in g_ownership_id_storage so the pointer stays
+            // alive until the next QueryOwnership call clears it.
+            g_ownership_id_storage.emplace_back(id);
             g_ownerships.emplace_back(EOS_Ecom_ItemOwnership{
                 EOS_ECOM_ITEMOWNERSHIP_API_LATEST,
-                Util::copy_c_string(id),
+                g_ownership_id_storage.back().c_str(),
                 unlocked ? EOS_EOwnershipStatus::EOS_OS_Owned : EOS_EOwnershipStatus::EOS_OS_NotOwned
             });
         }

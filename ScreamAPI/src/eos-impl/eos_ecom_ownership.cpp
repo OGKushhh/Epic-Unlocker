@@ -4,6 +4,9 @@
 #include "util.h"
 
 // Pre-built ownership list for the ForceSuccess fallback path.
+// ownership_id_storage owns the string memory; ownerships[i].Id points
+// into it. Both are cleared together on every QueryOwnership call - no leak.
+static std::vector<std::string>            ownership_id_storage;
 static std::vector<EOS_Ecom_ItemOwnership> ownerships;
 
 // ---------------------------------------------------------------------------
@@ -18,16 +21,20 @@ EOS_DECLARE_FUNC(void) EOS_Ecom_QueryOwnership(
 ){
 	Logger::debug(__func__);
 
+	ownership_id_storage.clear();
 	ownerships.clear();
 	if(Options){
 		Logger::dlc("Game queried ownership of %d item(s):", Options->CatalogItemIdCount);
+		ownership_id_storage.reserve(Options->CatalogItemIdCount);
+		ownerships.reserve(Options->CatalogItemIdCount);
 		for(uint32_t i = 0; i < Options->CatalogItemIdCount; i++){
 			const char* id = Options->CatalogItemIds[i];
 			Logger::dlc("\t""Item ID: %s", id);
 			bool unlocked = Config::IsDlcUnlocked(std::string(id), true);
+			ownership_id_storage.emplace_back(id);
 			ownerships.emplace_back(EOS_Ecom_ItemOwnership{
 				EOS_ECOM_ITEMOWNERSHIP_API_LATEST,
-				Util::copy_c_string(id),
+				ownership_id_storage.back().c_str(),
 				unlocked ? EOS_EOwnershipStatus::EOS_OS_Owned : EOS_EOwnershipStatus::EOS_OS_NotOwned
 			});
 		}
