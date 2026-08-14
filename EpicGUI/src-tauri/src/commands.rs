@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use crate::dlc_log_parser;
 use crate::pipe_client::PipeClientState;
 use crate::pipe_protocol::*;
-use crate::state::{Achievement, AppState, ConnectionStatus, DlcEntry};
+use crate::state::{Achievement, AppState, ConnectionStatus, DlcEntry, LOG_MAX_LINES, LOG_TRIM_TO};
 
 // ── Connection ──────────────────────────────────────────────────────────────
 #[tauri::command]
@@ -216,10 +216,26 @@ pub async fn get_entitlement_count(
 // the DLC parsing stay in lockstep — no separate timer to manage.
 #[tauri::command]
 pub async fn get_log_tail(
-    max_lines: Option<usize>,
+    _max_lines: Option<usize>,
     state: State<'_, Arc<RwLock<AppState>>>,
     app: tauri::AppHandle,
 ) -> Result<LogTail, String> {
+    // ── Incremental log tail (ports C++ TailLogFile behavior) ──────────────
+    // Previous behavior (BUGGY): read last 2MB every poll, clear dlc_stats,
+    // re-parse whole tail. This caused current_owned to flip depending on
+    // which lines fell in the 2MB window — unstable across restarts because
+    // the tail window shifts forward as the log grows.
+    //
+    // New behavior (FIXED): track log_file_pos in AppState. Each poll reads
+    // only NEW bytes since the last poll, parses only those new lines into
+    // dlc_stats (NO clear), and appends to a rolling log_lines buffer capped
+    // at LOG_MAX_LINES. On LogPath packet (new game), log_file_pos is reset
+    // to 0 and dlc_stats is cleared — exactly mirroring the C++ behavior
+    // where g_logFilePos=0 and g_dlcItems.clear() only happen on a new game.
+    //
+    // Edge case: if the file size is now SMALLER than log_file_pos (log was
+    // truncated/rotated by the user or by ScreamAPI), reset to 0 and re-read
+    // the whole file, and clear dlc_stats so we don't double-count.
     let path = state.read().await.log_path.clone();
     let path = match path {
         Some(p) => p,
@@ -231,71 +247,50 @@ pub async fn get_log_tail(
             });
         }
     };
-    let n = max_lines.unwrap_or(20000);
     #[cfg(target_os = "windows")]
     {
-        // Propagate IO errors instead of silently swallowing them. The
-        // frontend's log poller already does `.catch(() => {})` so an error
-        // here just means "keep showing the previous log lines" — which is
-        // much better UX than wiping the visible log to empty every time the
-        // game briefly locks ScreamAPI.log for writing.
-        let log_result = read_log_tail(&path, n).map_err(|e| {
-            log::warn!("[get_log_tail] read_log_tail failed for {path}: {e}");
+        let last_pos = state.read().await.log_file_pos;
+        let inc = read_log_incremental(&path, last_pos).map_err(|e| {
+            log::warn!("[get_log_tail] read_log_incremental failed for {path}: {e}");
             e.to_string()
         })?;
-        // Parse [DLC] lines and update DLC stats. We do this on every poll
-        // because the C++ version did the same — it's cheap (string `find`
-        // on a few thousand lines is microseconds) and idempotent (re-parsing
-        // the same line just re-increments the same counters, which matches
-        // the C++ behavior). The frontend's poll is throttled to 1s.
-        //
-        // IMPORTANT: We parse the FULL tail every time, not just new lines.
-        // This is correct because:
-        //   - The C++ version also re-parsed everything on each TailLogFile
-        //     call after a file-position reset (e.g. log file rotated).
-        //   - It's idempotent for Item ID: / [Owned] / [Not Owned] — those
-        //     increment counters, but since we re-read the same lines every
-        //     poll, the counters would keep growing. To avoid that, we
-        //     RESET dlc_stats before each parse. This means the stats always
-        //     reflect the current tail of the log, not a cumulative count.
-        //   - For entitlement_count, we just take the last seen value.
-        // ── Snapshot-then-reparse change detection ───────────────────────────
-        // We can't trust `ParseOutcome::changed` after a reset, because every
-        // `Item ID:` line will report `changed = true` (the entry goes from
-        // nonexistent → freshly created). Instead we snapshot the old state,
-        // re-parse the entire tail, and compare. Only emit `dlc-stats-updated`
-        // when the parsed state actually differs from what we had before.
-        //
-        // This kills the 1/event-per-second flood the frontend was receiving
-        // on every poll while a game with [DLC] log lines was running.
+
+        if inc.new_lines.is_empty() {
+            // Nothing new since last poll — return the current in-memory buffer.
+            let lines_snapshot = state.read().await.log_lines.clone();
+            return Ok(LogTail {
+                path,
+                lines: lines_snapshot,
+                truncated: false,
+            });
+        }
+
+        let lines_snapshot: Vec<String>;
+        let truncated: bool;
         let mut stats_changed = false;
         let mut ec_changed = false;
         {
             let mut s = state.write().await;
-            // CRITICAL: deref the guard ONCE into a &mut AppState binding.
-            // Disjoint field borrows (`&mut s.dlc_stats` + `&mut s.entitlement_count`)
-            // do NOT propagate through `DerefMut` on `RwLockWriteGuard` — the
-            // compiler treats each field access as a fresh `deref_mut(&mut s)`
-            // call, which is two simultaneous mutable borrows of the guard
-            // itself (E0499). Pulling out a single `&mut AppState` reference
-            // lets the disjoint-field-borrow optimization kick in.
             let s_ref = &mut *s;
 
-            // Snapshot BEFORE clearing (cheap — usually <50 entries).
+            // If the file was rotated/truncated, reset stats so we don't
+            // carry stale state forward.
+            if inc.reset {
+                s_ref.dlc_stats.clear();
+                s_ref.entitlement_count = -1;
+                s_ref.log_lines.clear();
+            }
+
+            // Snapshot for change detection (only emit events when state
+            // actually moved). Cheap — usually <50 entries.
             let old_stats = s_ref.dlc_stats.clone();
             let old_ec = s_ref.entitlement_count;
 
-            // Reset stats before re-parsing the tail. The stats always reflect
-            // the current tail of the log, not a cumulative count across the
-            // whole session. This matches the practical behavior of the C++
-            // version (which tracked file position but only saw lines after
-            // the GUI launched; we see the whole tail on every poll, which is
-            // equivalent for sessions shorter than the 2MB tail window).
-            s_ref.dlc_stats.clear();
-            s_ref.entitlement_count = -1;
-            for line in &log_result.lines {
-                // The outcome's `changed` flag is unreliable post-reset; we
-                // ignore it and compare snapshots below.
+            // Parse only the NEW lines. Incremental update — no clear.
+            // Disjoint field borrows (`&mut s_ref.dlc_stats` + `&mut s_ref.entitlement_count`)
+            // work here because we already deref'd the guard into a single
+            // `&mut AppState` binding (s_ref).
+            for line in &inc.new_lines {
                 let _ = dlc_log_parser::parse_dlc_line(
                     line,
                     &mut s_ref.dlc_stats,
@@ -303,16 +298,31 @@ pub async fn get_log_tail(
                 );
             }
 
-            // Compare against the snapshot — only emit if something actually
-            // moved. This is what throttles the event flood.
+            // Append new lines to the rolling display buffer.
+            s_ref.log_lines.extend(inc.new_lines.iter().cloned());
+            if s_ref.log_lines.len() > LOG_MAX_LINES {
+                let drain_count = s_ref.log_lines.len() - LOG_TRIM_TO;
+                s_ref.log_lines.drain(..drain_count);
+            }
+
+            // Advance file position.
+            s_ref.log_file_pos = inc.new_pos;
+
+            truncated = s_ref.log_lines.len() >= LOG_MAX_LINES;
+
             if s_ref.dlc_stats != old_stats {
                 stats_changed = true;
             }
             if s_ref.entitlement_count != old_ec {
                 ec_changed = true;
             }
+
+            // Clone the buffer for the return value while we still hold the
+            // lock, so the snapshot is consistent with the state we just wrote.
+            // Cloning ~20k small Strings is ~1ms — negligible vs the 1s poll.
+            lines_snapshot = s_ref.log_lines.clone();
         }
-        // Emit events outside the write lock to avoid holding it across emit.
+        // Emit + return outside the write lock so we don't hold it across emit.
         if stats_changed || ec_changed {
             log::debug!(
                 "[get_log_tail] DLC stats changed (stats={}, ec={}) — emitting dlc-stats-updated",
@@ -323,15 +333,18 @@ pub async fn get_log_tail(
         }
         Ok(LogTail {
             path,
-            lines: log_result.lines,
-            truncated: log_result.truncated,
+            lines: lines_snapshot,
+            truncated,
         })
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = n;
         let _ = app;
-        Ok(LogTail { path, lines: vec![], truncated: false })
+        Ok(LogTail {
+            path,
+            lines: vec![],
+            truncated: false,
+        })
     }
 }
 
@@ -346,6 +359,17 @@ pub async fn clear_log(
             let _ = std::fs::write(&p, b"");
         }
         let _ = p;
+    }
+    // Also clear the in-memory log_lines buffer + reset file position so the
+    // next get_log_tail poll starts fresh from offset 0 of the now-empty file.
+    // dlc_stats is intentionally NOT cleared here — those stats reflect the
+    // session history, not the log file contents, and the user expects "Clear"
+    // to only wipe the visible log view. (If they want a full reset, launching
+    // a new game will reset everything via the LogPath handler.)
+    {
+        let mut s = state.write().await;
+        s.log_lines.clear();
+        s.log_file_pos = 0;
     }
     Ok(())
 }
@@ -642,39 +666,87 @@ pub struct LogTail {
     pub truncated: bool,
 }
 
+/// Result of an incremental log read.
+struct IncrementalRead {
+    /// Only the lines that were NEW since `last_pos` (i.e. not yet seen).
+    /// Empty if the file hasn't grown since the last poll.
+    new_lines: Vec<String>,
+    /// New byte offset to store as `log_file_pos` for the next poll.
+    new_pos: u64,
+    /// True if we detected the file was truncated/rotated and reset to 0.
+    /// Caller should clear dlc_stats + log_lines in this case.
+    reset: bool,
+}
+
+/// Reads only the new bytes from the log file since `last_pos`.
+///
+/// Behavior:
+///   - If file_size <= last_pos: nothing new, return empty new_lines.
+///   - If file_size < last_pos (file shrank — rotated/truncated): reset=true,
+///     read the whole file from offset 0.
+///   - Otherwise: seek to last_pos, read everything from there to EOF.
+///
+/// The caller is responsible for:
+///   - Parsing new_lines into dlc_stats (incremental, no clear).
+///   - Appending new_lines to the rolling log_lines display buffer.
+///   - Storing new_pos back into AppState.log_file_pos.
+///   - On reset=true, clearing dlc_stats + log_lines first.
+///
+/// We do NOT use a BufReader here because we want byte-precise positioning
+/// and we read the entire tail in one ReadFile call (matching the C++ impl
+/// which allocates one buffer of `fs.QuadPart - g_logFilePos` bytes).
 #[cfg(target_os = "windows")]
-fn read_log_tail(path: &str, max_lines: usize) -> std::io::Result<LogTail> {
-    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+fn read_log_incremental(path: &str, last_pos: u64) -> std::io::Result<IncrementalRead> {
+    use std::io::Read;
     let mut file = std::fs::File::open(path)?;
-    let file_size = file.metadata()?.len() as usize;
-    // Read the last ~2 MB (covers ~20000 lines of typical log at ~100 bytes/line)
-    let chunk = 2 * 1024 * 1024;
-    if file_size > chunk {
-        file.seek(SeekFrom::End(-(chunk as i64)))?;
+    let file_size = file.metadata()?.len();
+
+    // Case 1: nothing new since last poll.
+    if file_size <= last_pos && last_pos > 0 {
+        return Ok(IncrementalRead {
+            new_lines: Vec::new(),
+            new_pos: last_pos,
+            reset: false,
+        });
+    }
+
+    // Case 2: file shrank — log was rotated/truncated. Reset to 0.
+    let (start, reset) = if file_size < last_pos {
+        log::warn!(
+            "[read_log_incremental] log file shrank (was {last_pos}, now {file_size}) — resetting to 0"
+        );
+        (0u64, true)
     } else {
-        file.seek(SeekFrom::Start(0))?;
+        (last_pos, false)
+    };
+
+    use std::io::Seek;
+    file.seek(std::io::SeekFrom::Start(start))?;
+    let to_read = (file_size - start) as usize;
+    // Read raw bytes, then convert with from_utf8_lossy — the file may be
+    // mid-write by ScreamAPI and contain a partial UTF-8 sequence at EOF.
+    // (The next poll will pick up the rest of that sequence once it's
+    // complete.) from_utf8_lossy replaces any invalid bytes with U+FFFD
+    // rather than failing the whole read.
+    let mut bytes = Vec::with_capacity(to_read);
+    file.read_to_end(&mut bytes)?;
+    let raw = String::from_utf8_lossy(&bytes).into_owned();
+
+    let new_pos = start + bytes.len() as u64;
+
+    // Split into lines, stripping trailing \r (Windows CRLF) and skipping
+    // empty lines (matches C++ behavior in TailLogFile).
+    let mut new_lines: Vec<String> = Vec::new();
+    for line in raw.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if !line.is_empty() {
+            new_lines.push(line.to_string());
+        }
     }
-    // IMPORTANT: keep the BufReader alive for BOTH the partial-line skip AND
-    // the subsequent lines() pass. If we let a temporary BufReader go out of
-    // scope after skipping the first line, its internal 8KB buffer would be
-    // dropped along with it, losing data.
-    let mut reader = BufReader::new(file);
-    if file_size > chunk {
-        // Skip the partial first line (likely cut in half by the seek).
-        let mut discard = String::new();
-        reader.read_line(&mut discard)?;
-        let _ = discard;
-    }
-    let mut lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    let total = lines.len();
-    let truncated = total > max_lines;
-    if truncated {
-        let drain_count = total - max_lines;
-        lines.drain(..drain_count);
-    }
-    Ok(LogTail {
-        path: path.to_string(),
-        lines,
-        truncated,
+
+    Ok(IncrementalRead {
+        new_lines,
+        new_pos,
+        reset,
     })
 }

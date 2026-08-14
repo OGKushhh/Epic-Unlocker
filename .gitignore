@@ -341,3 +341,12 @@ ASALocalRun/
 healthchecksdb
 **/EOSSDK-Win32-Shipping.dll
 **/EOSSDK-Win64-Shipping.dll
+
+# === EpicGUI (Tauri / Rust) ===
+EpicGUI/dist/
+EpicGUI/src-tauri/target/
+EpicGUI/src-tauri/Cargo.lock
+EpicGUI/*.tsbuildinfo
+EpicGUI/src-tauri/desktop-schema.json
+EpicGUI/src-tauri/windows-schema.json
+EpicGUI/.vite/

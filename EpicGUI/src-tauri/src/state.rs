@@ -78,7 +78,20 @@ pub struct AppState {
     pub dlc_stats: HashMap<String, DlcStat>,
     /// Last-seen `GetEntitlementsCount: N` value from the log. -1 = unknown.
     pub entitlement_count: i32,
+    /// Byte offset of the last-read position in ScreamAPI.log.
+    /// Ports the C++ `g_logFilePos` behavior: only new bytes are read on
+    /// each poll, and dlc_stats are updated incrementally (no clear).
+    /// Reset to 0 when a new LogPath packet arrives (new game connecting).
+    pub log_file_pos: u64,
+    /// Rolling in-memory buffer of log lines for display in the Log tab.
+    /// Capped at LOG_MAX_LINES (20000); oldest lines dropped.
+    /// This replaces the previous "read last 2MB every poll" behavior —
+    /// now we read incrementally and keep what we've seen.
+    pub log_lines: Vec<String>,
 }
+
+pub(crate) const LOG_MAX_LINES: usize = 20000;
+pub(crate) const LOG_TRIM_TO: usize = 18000;
 
 impl AppState {
     pub fn connection_status(&self) -> ConnectionStatus {

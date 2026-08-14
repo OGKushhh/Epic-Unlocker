@@ -235,8 +235,16 @@ async fn handle_packet(
             {
                 let mut s = state.write().await;
                 s.log_path = Some(path.clone());
+                // Reset incremental-log state — matches C++ behavior on
+                // LogPath packet (g_logFilePos=0, g_dlcItems.clear(),
+                // g_logLines.clear(), g_entitlementCount=-1).
+                // This is the ONLY place dlc_stats should be cleared.
+                s.log_file_pos = 0;
+                s.dlc_stats.clear();
+                s.entitlement_count = -1;
+                s.log_lines.clear();
             }
-            log::info!("LogPath: {path}");
+            log::info!("LogPath: {path} (incremental log state reset)");
             let _ = tauri::Emitter::emit(app, "log-path", path);
         }
         PktType::DlcCatalog => {
