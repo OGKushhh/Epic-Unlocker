@@ -1,3 +1,0 @@
-#include "resource.h"
-
-IDI_APPICON ICON "..\\resources\\trophy.ico"

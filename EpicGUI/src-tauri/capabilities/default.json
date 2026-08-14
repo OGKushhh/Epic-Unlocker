@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "default",
+  "description": "Default capabilities for EpicGUI main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-set-title",
+    "core:event:default",
+    "shell:default",
+    "shell:allow-open",
+    "dialog:default",
+    "fs:default",
+    "os:default",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "**" }
+      ]
+    }
+  ]
+}

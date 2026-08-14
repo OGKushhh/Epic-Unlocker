@@ -1,0 +1,63 @@
+[package]
+name = "epicgui"
+version = "2.0.0"
+description = "Epic Achievements Unlocker GUI"
+authors = ["EpicUnlocker Team"]
+edition = "2021"
+rust-version = "1.77"
+
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-default-run-field
+[lib]
+name = "epicgui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.1", features = ["protocol-asset", "tray-icon"] }
+tauri-plugin-shell = "2.0"
+tauri-plugin-dialog = "2.0"
+tauri-plugin-fs = "2.0"
+tauri-plugin-os = "2.0"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Date/time for export timestamps
+chrono = "0.4"
+
+# HTTP client for downloading achievement icons (independent of the in-game overlay).
+# rustls-tls avoids pulling in OpenSSL on Windows (simpler cross-compile story).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+
+# Named pipe client (Windows) / Unix domain socket fallback (other OSes)
+# We use raw std::os::windows for the pipe — no extra crate needed.
+# For non-Windows dev, we stub the pipe layer.
+
+[features]
+# This feature is used for production builds or when a dev server is not specified,
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+# IMPORTANT: do NOT use `panic = "abort"` — tokio requires unwinding to properly
+# drop tasks on panic. With abort, any panic in any spawned task (including the
+# pipe reader) would kill the entire GUI with no error recovery.
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

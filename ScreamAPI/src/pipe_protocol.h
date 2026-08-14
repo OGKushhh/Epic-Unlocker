@@ -55,6 +55,7 @@ struct AchEntry {
     uint32_t idOff;
     uint32_t nameOff;
     uint32_t descOff;
+    uint32_t iconUrlOff;   // offset of UnlockedIconURL in the blob (0 = no URL)
     uint8_t  isHidden;
     WireUnlockState state;
 };

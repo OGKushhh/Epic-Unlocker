@@ -1,0 +1,24 @@
+# Build artifacts
+dist/
+src-tauri/target/
+src-tauri/Cargo.lock
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local

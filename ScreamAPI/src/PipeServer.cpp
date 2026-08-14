@@ -80,8 +80,10 @@ static void SendAchList(HANDLE pipe) {
         return;
     }
 
-    // Build string blob
+    // Build string blob. A leading NUL byte reserves offset 0 as the
+    // "no value" sentinel so iconUrlOff == 0 unambiguously means "no URL".
     std::string blob;
+    blob.push_back('\0');
     std::vector<AchEntry> entries;
     entries.reserve(snapshot.size());
 
@@ -96,6 +98,10 @@ static void SendAchList(HANDLE pipe) {
         e.idOff   = addStr(a.AchievementId);
         e.nameOff = addStr(a.UnlockedDisplayName);
         e.descOff = addStr(a.UnlockedDescription);
+        // If the SDK gave us an UnlockedIconURL, pack it into the blob;
+        // otherwise store offset 0 so the GUI knows there is no icon URL.
+        const char* iconUrl = a.UnlockedIconURL;
+        e.iconUrlOff = (iconUrl && iconUrl[0] != '\0') ? addStr(iconUrl) : 0;
         e.isHidden = a.IsHidden ? 1 : 0;
         e.state    = static_cast<WireUnlockState>(static_cast<int>(a.UnlockState));
         entries.push_back(e);
@@ -168,17 +174,28 @@ static void HandleClient(HANDLE pipe) {
     SendAchList(pipe);
     SendDlcCatalog(pipe);  // send catalog titles after achievement list
 
+    Logger::info("[PIPE] HandleClient: entering command read loop, waiting for GUI commands...");
     while (s_running) {
         PktHeader hdr{};
-        if (!ReadAll(pipe, &hdr, sizeof(hdr))) break;
+        if (!ReadAll(pipe, &hdr, sizeof(hdr))) {
+            DWORD err = GetLastError();
+            Logger::info("[PIPE] HandleClient: ReadAll(header) returned false (GetLastError=%u) - exiting loop", (unsigned)err);
+            break;
+        }
         if (hdr.magic != EPIC_MAGIC || hdr.payloadSize > 1024u * 1024u) {
-            Logger::error("[PIPE] Invalid packet magic/size — disconnecting");
+            Logger::error("[PIPE] HandleClient: invalid packet magic=0x%08X or payloadSize=%u - disconnecting",
+                          (unsigned)hdr.magic, (unsigned)hdr.payloadSize);
             break;
         }
 
         std::vector<uint8_t> payload(hdr.payloadSize);
         if (hdr.payloadSize > 0)
-            if (!ReadAll(pipe, payload.data(), hdr.payloadSize)) break;
+            if (!ReadAll(pipe, payload.data(), hdr.payloadSize)) {
+                DWORD err = GetLastError();
+                Logger::error("[PIPE] HandleClient: ReadAll(payload, %u bytes) returned false (GetLastError=%u) - exiting loop",
+                              (unsigned)hdr.payloadSize, (unsigned)err);
+                break;
+            }
 
         switch (hdr.type) {
         case PktType::CmdUnlock: {

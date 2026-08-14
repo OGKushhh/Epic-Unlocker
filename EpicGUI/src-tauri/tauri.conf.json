@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EpicGUI",
+  "version": "2.0.0",
+  "identifier": "com.epicunlocker.epicgui",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Epic Unlocker — Achievement Manager",
+        "width": 1150,
+        "height": 740,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https://* asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "",
+    "category": "Utility",
+    "shortDescription": "Epic Achievements Unlocker GUI",
+    "longDescription": "A desktop GUI for managing Epic Games achievements via the ScreamAPI protocol bridge."
+  }
+}
