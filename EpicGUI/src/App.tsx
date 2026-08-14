@@ -57,6 +57,7 @@ export default function App() {
     entitlementCount,
     logLines,
     logPath,
+    logFileSize,
     connection,
     loading,
     isDevMode,
@@ -301,11 +302,7 @@ export default function App() {
             connected={connected}
             loading={loading}
             lastError={connection?.lastError ?? null}
-            logSize={
-              logLines.length > 0
-                ? `${(logLines.length * 0.045).toFixed(1)} KB`
-                : "0 KB"
-            }
+            logSizeBytes={logFileSize}
           />
         </div>
       </div>

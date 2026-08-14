@@ -11,6 +11,7 @@ import type {
   AchievementFilter,
   ConnectionStatus,
   LogTail,
+  AppSettings,
 } from "@/types";
 
 // ── Connection ──────────────────────────────────────────────────────────────
@@ -77,6 +78,23 @@ export const clearLog = (): Promise<void> => invoke("clear_log");
 
 export const openLogExternally = (): Promise<void> =>
   invoke("open_log_externally");
+
+// ── SDK log (A1) ─────────────────────────────────────────────────────────────
+// The EOS SDK's own log stream is routed to ScreamAPI_SDK.log next to
+// ScreamAPI.log. These commands let the Settings tab show the path + open it.
+export const getSdkLogPath = (): Promise<string> =>
+  invoke("get_sdk_log_path");
+
+export const openSdkLogExternally = (): Promise<void> =>
+  invoke("open_sdk_log_externally");
+
+// ── Settings (G2) ────────────────────────────────────────────────────────────
+// Persistent JSON config in the app's local data dir.
+export const getSettings = (): Promise<AppSettings> =>
+  invoke("get_settings");
+
+export const saveSettings = (settings: AppSettings): Promise<void> =>
+  invoke("save_settings", { settings });
 
 // ── Window controls (frameless window) ───────────────────────────────────────
 export const windowMinimize = (): Promise<void> => invoke("window_minimize");

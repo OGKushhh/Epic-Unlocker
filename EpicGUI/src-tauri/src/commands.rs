@@ -244,6 +244,7 @@ pub async fn get_log_tail(
                 path: String::new(),
                 lines: vec![],
                 truncated: false,
+                file_size: 0,
             });
         }
     };
@@ -262,6 +263,7 @@ pub async fn get_log_tail(
                 path,
                 lines: lines_snapshot,
                 truncated: false,
+                file_size: inc.file_size,
             });
         }
 
@@ -335,6 +337,7 @@ pub async fn get_log_tail(
             path,
             lines: lines_snapshot,
             truncated,
+            file_size: inc.file_size,
         })
     }
     #[cfg(not(target_os = "windows"))]
@@ -344,6 +347,7 @@ pub async fn get_log_tail(
             path,
             lines: vec![],
             truncated: false,
+            file_size: 0,
         })
     }
 }
@@ -397,6 +401,81 @@ pub async fn open_log_externally(
         let _ = p;
     }
     Ok(())
+}
+
+// ── SDK log path ────────────────────────────────────────────────────────────
+// A1: The EOS SDK's own log stream is routed to ScreamAPI_SDK.log next to
+// ScreamAPI.log. We expose the path so the Settings tab can show it + offer
+// an "Open" button. The path is derived from log_path by replacing the
+// filename with "ScreamAPI_SDK.log" — same logic the DLL uses.
+
+#[tauri::command]
+pub async fn get_sdk_log_path(
+    state: State<'_, Arc<RwLock<AppState>>>,
+) -> Result<String, String> {
+    let path = state.read().await.log_path.clone();
+    let Some(p) = path else {
+        // No log path yet — game hasn't connected.
+        return Ok(String::new());
+    };
+    // Replace filename with ScreamAPI_SDK.log (matches DLL's sdkLogPath logic).
+    let sdk_path = std::path::Path::new(&p)
+        .with_file_name("ScreamAPI_SDK.log")
+        .to_string_lossy()
+        .to_string();
+    Ok(sdk_path)
+}
+
+#[tauri::command]
+pub async fn open_sdk_log_externally(
+    state: State<'_, Arc<RwLock<AppState>>>,
+) -> Result<(), String> {
+    let path = state.read().await.log_path.clone();
+    let Some(p) = path else {
+        return Err("No log file path available yet — launch a game first.".to_string());
+    };
+    let sdk_path = std::path::Path::new(&p)
+        .with_file_name("ScreamAPI_SDK.log")
+        .to_string_lossy()
+        .to_string();
+    #[cfg(target_os = "windows")]
+    {
+        // If the SDK log file doesn't exist yet, surface a friendly error
+        // rather than letting ShellExecuteW show a confusing OS dialog.
+        if !std::path::Path::new(&sdk_path).exists() {
+            return Err(format!(
+                "SDK log file does not exist yet: {sdk_path}\n\
+                Launch a game with Epic Unlocker — the SDK log is created on first connection."
+            ));
+        }
+        open_with_default_app_windows(&sdk_path)?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = sdk_path;
+    }
+    Ok(())
+}
+
+// ── Settings persistence (G2) ───────────────────────────────────────────────
+// Load/save a JSON config file in the app's local data dir. Surfaces the
+// settings that the SettingsTab displays (auto-refresh interval, connect on
+// launch, max log lines). The actual settings struct + load/save logic lives
+// in settings.rs; these commands are thin wrappers.
+
+#[tauri::command]
+pub async fn get_settings(
+    app: tauri::AppHandle,
+) -> Result<crate::settings::AppSettings, String> {
+    crate::settings::AppSettings::load(&app)
+}
+
+#[tauri::command]
+pub async fn save_settings(
+    settings: crate::settings::AppSettings,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    settings.save(&app)
 }
 
 /// Launches `path` with its associated application via `ShellExecuteW`.
@@ -664,6 +743,12 @@ pub struct LogTail {
     pub path: String,
     pub lines: Vec<String>,
     pub truncated: bool,
+    /// Real byte size of the log file on disk (not an estimate). Drives the
+    /// "Log size: X KB" display in the statusbar — previously the GUI
+    /// estimated size as `logLines.length * 0.045`, which was wildly off for
+    /// long lines or short lines. This is the actual file_size from
+    /// std::fs::metadata, captured during the incremental read.
+    pub file_size: u64,
 }
 
 /// Result of an incremental log read.
@@ -676,6 +761,10 @@ struct IncrementalRead {
     /// True if we detected the file was truncated/rotated and reset to 0.
     /// Caller should clear dlc_stats + log_lines in this case.
     reset: bool,
+    /// Total byte size of the log file on disk (from metadata().len()).
+    /// Returned to the frontend so the statusbar can show real KB/MB
+    /// instead of estimating from line count.
+    file_size: u64,
 }
 
 /// Reads only the new bytes from the log file since `last_pos`.
@@ -707,6 +796,7 @@ fn read_log_incremental(path: &str, last_pos: u64) -> std::io::Result<Incrementa
             new_lines: Vec::new(),
             new_pos: last_pos,
             reset: false,
+            file_size,
         });
     }
 
@@ -748,5 +838,6 @@ fn read_log_incremental(path: &str, last_pos: u64) -> std::io::Result<Incrementa
         new_lines,
         new_pos,
         reset,
+        file_size,
     })
 }

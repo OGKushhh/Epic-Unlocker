@@ -18,6 +18,11 @@ export interface Achievement {
    * an `asset://` URL via Tauri's convertFileSrc at render time.
    */
   iconPath?: string;
+  /**
+   * A3: Human-readable stat threshold annotation, e.g. "12/50 kills".
+   * Undefined when no stat info available. Rendered next to the progress bar.
+   */
+  statThreshold?: string;
 }
 
 export interface DlcEntry {

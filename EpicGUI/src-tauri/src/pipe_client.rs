@@ -190,6 +190,14 @@ async fn handle_packet(
                 } else {
                     read_string(blob, entry.icon_url_off).filter(|s| !s.is_empty())
                 };
+                // A3: parse progress (u16 fixed-point 0..1000 -> 0..1 float)
+                // and stat_threshold label (offset 0 = None).
+                let progress = entry.progress as f32 / 1000.0;
+                let stat_threshold = if entry.stat_threshold_off == 0 {
+                    None
+                } else {
+                    read_string(blob, entry.stat_threshold_off).filter(|s| !s.is_empty())
+                };
                 let wire_state = WireUnlockState::from_u8(entry.state)
                     .unwrap_or(WireUnlockState::Locked);
                 achievements.push(crate::state::Achievement {
@@ -199,6 +207,8 @@ async fn handle_packet(
                     is_hidden: entry.is_hidden != 0,
                     state: wire_state.as_str().to_string(),
                     icon_url,
+                    progress,
+                    stat_threshold,
                 });
             }
             // Drop the write lock BEFORE logging/emitting to minimize contention.

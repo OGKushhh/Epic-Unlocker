@@ -15,6 +15,9 @@ bool ForceAchievementsConfig();
 bool EnableKeyboardNavigation();
 bool BlockMetrics();
 // Logging
+bool EnableLogging();
+bool EnableSDKLog();            // A1: capture EOS SDK log to ScreamAPI_SDK.log (default: false)
+std::string SDKLogLevel();      // A1: SDK log verbosity: Off|Fatal|Error|Warning|Info|Verbose|VeryVerbose (default: Warning)
 std::string LogLevel();
 std::string LogFilename();
 bool LogDLCQueries();

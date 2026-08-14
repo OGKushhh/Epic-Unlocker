@@ -169,6 +169,13 @@ pub struct AchEntry {
     pub icon_url_off: u32,
     pub is_hidden: u8,
     pub state: u8,
+    /// A3: player progress as fixed-point 0..1000 (0 = 0%, 1000 = 100%).
+    /// Divide by 1000.0 to recover the 0..1 float. Older DLL builds that
+    /// don't send progress will zero this field (which correctly reads as 0%).
+    pub progress: u16,
+    /// A3: offset of the StatThresholdLabel string in the blob (0 = no label).
+    /// e.g. "12/50 kills" — rendered next to the progress bar in the GUI.
+    pub stat_threshold_off: u32,
 }
 
 impl AchEntry {
@@ -188,6 +195,9 @@ impl AchEntry {
             icon_url_off: u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
             is_hidden: buf[16],
             state: buf[17],
+            // A3: progress (u16 LE) + stat_threshold_off (u32 LE)
+            progress: u16::from_le_bytes([buf[18], buf[19]]),
+            stat_threshold_off: u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]),
         })
     }
 }

@@ -55,9 +55,16 @@ struct AchEntry {
     uint32_t idOff;
     uint32_t nameOff;
     uint32_t descOff;
-    uint32_t iconUrlOff;   // offset of UnlockedIconURL in the blob (0 = no URL)
+    uint32_t iconUrlOff;          // offset of UnlockedIconURL in the blob (0 = no URL)
     uint8_t  isHidden;
     WireUnlockState state;
+    // A3: player progress as fixed-point 0..1000 (0 = 0%, 1000 = 100%).
+    // We avoid float on the wire for cross-platform stability. The GUI
+    // divides by 1000.0 to recover the 0..1 float.
+    uint16_t progress;
+    // A3: offset of the StatThresholdLabel string in the blob (0 = no label).
+    // e.g. "12/50 kills" — the GUI renders this next to the progress bar.
+    uint32_t statThresholdOff;
 };
 
 // ── AchUpdate payload ─────────────────────────────────────────────────────────

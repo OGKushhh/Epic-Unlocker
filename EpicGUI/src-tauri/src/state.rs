@@ -19,6 +19,16 @@ pub struct Achievement {
     /// independently of the in-game overlay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
+    /// A3: Player progress 0..1 from EOS_Achievements_PlayerAchievement::Progress.
+    /// 0 = no progress, 1 = fully complete (will be Unlocked). Older DLL builds
+    /// that don't send progress will leave this at 0.0.
+    #[serde(default)]
+    pub progress: f32,
+    /// A3: Human-readable stat threshold annotation, e.g. "12/50 kills".
+    /// None if no stat info available (non-stat-gated achievements or older
+    /// DLL builds). Rendered next to the progress bar in the GUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stat_threshold: Option<String>,
 }
 
 /// DLC entry as sent over the pipe from the DLL (catalog packet).

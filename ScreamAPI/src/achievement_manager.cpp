@@ -26,8 +26,9 @@ static std::mutex g_achMutex;  // guards achievements vector
 
 std::mutex& GetAchievementsMutex() { return g_achMutex; }
 
-// Free heap-allocated stat threshold arrays in an achievement vector.
-// Called before clearing/repopulating the achievements list to prevent leaks.
+// Free heap-allocated stat threshold arrays + StatThresholdLabel strings in an
+// achievement vector. Called before clearing/repopulating the achievements list
+// to prevent leaks.
 static void freeAchievementStatThresholds(Achievements& vec) {
     for (auto& ach : vec) {
         if (ach.StatThresholds != nullptr && ach.StatThresholdsCount > 0) {
@@ -38,6 +39,12 @@ static void freeAchievementStatThresholds(Achievements& vec) {
             ach.StatThresholds = nullptr;
             ach.StatThresholdsCount = 0;
         }
+        // A3: free the StatThresholdLabel string (heap-allocated in
+        // queryPlayerAchievementsComplete). Safe to delete nullptr.
+        delete[] ach.StatThresholdLabel;
+        ach.StatThresholdLabel = nullptr;
+        // A3: reset Progress too (will be repopulated).
+        ach.Progress = 0.0f;
     }
 }
 
@@ -395,9 +402,51 @@ void EOS_CALL queryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlay
 
         printPlayerAchievement(OutAchievement);
 
+        // A3: Capture Progress (0..1) and build a human-readable stat threshold
+        // label (e.g. "12/50 kills") from StatInfo. We copy these onto the
+        // matching Overlay_Achievement so the GUI can render a real progress bar.
+        const float capturedProgress = OutAchievement->Progress;
+        std::string thresholdLabel;
+        if (OutAchievement->StatInfoCount > 0) {
+            for (int i = 0; i < OutAchievement->StatInfoCount; i++) {
+                if (i > 0) thresholdLabel += ", ";
+                const auto& si = OutAchievement->StatInfo[i];
+                thresholdLabel += std::to_string(si.CurrentValue);
+                thresholdLabel += "/";
+                thresholdLabel += std::to_string(si.ThresholdValue);
+                if (si.Name) {
+                    thresholdLabel += " ";
+                    thresholdLabel += si.Name;
+                }
+            }
+        }
+
         if (OutAchievement->UnlockTime != -1) {
-            findAchievement(OutAchievement->AchievementId, [](Overlay_Achievement& achievement) {
+            findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel](Overlay_Achievement& achievement) {
                 achievement.UnlockState = UnlockState::Unlocked;
+                achievement.Progress = 1.0f;
+                delete[] achievement.StatThresholdLabel;
+                if (thresholdLabel.empty()) {
+                    achievement.StatThresholdLabel = nullptr;
+                } else {
+                    char* buf = new char[thresholdLabel.size() + 1];
+                    strcpy_s(buf, thresholdLabel.size() + 1, thresholdLabel.c_str());
+                    achievement.StatThresholdLabel = buf;
+                }
+            });
+        } else {
+            // Not unlocked — record the progress + threshold label so the GUI
+            // can render a partial progress bar.
+            findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel](Overlay_Achievement& achievement) {
+                achievement.Progress = capturedProgress;
+                delete[] achievement.StatThresholdLabel;
+                if (thresholdLabel.empty()) {
+                    achievement.StatThresholdLabel = nullptr;
+                } else {
+                    char* buf = new char[thresholdLabel.size() + 1];
+                    strcpy_s(buf, thresholdLabel.size() + 1, thresholdLabel.c_str());
+                    achievement.StatThresholdLabel = buf;
+                }
             });
         }
 

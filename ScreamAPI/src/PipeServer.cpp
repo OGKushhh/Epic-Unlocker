@@ -104,6 +104,13 @@ static void SendAchList(HANDLE pipe) {
         e.iconUrlOff = (iconUrl && iconUrl[0] != '\0') ? addStr(iconUrl) : 0;
         e.isHidden = a.IsHidden ? 1 : 0;
         e.state    = static_cast<WireUnlockState>(static_cast<int>(a.UnlockState));
+        // A3: pack progress (clamp to 0..1000 fixed-point) + stat threshold label.
+        float p = a.Progress;
+        if (p < 0.0f) p = 0.0f;
+        if (p > 1.0f) p = 1.0f;
+        e.progress = (uint16_t)(p * 1000.0f + 0.5f);
+        const char* label = a.StatThresholdLabel;
+        e.statThresholdOff = (label && label[0] != '\0') ? addStr(label) : 0;
         entries.push_back(e);
     }
 

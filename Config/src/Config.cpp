@@ -20,6 +20,12 @@ std::string sLogFilename = "ScreamAPI.log";
 bool bLogDLCQueries         = true;
 bool bLogAchievementQueries = false;
 bool bLogOverlay            = false;
+// A1: EOS SDK log capture. Defaults to OFF because Verbose SDK logging
+// can produce thousands of log lines per second during startup, which
+// can crash games with strict init timeouts. Users who want SDK
+// diagnostics must explicitly opt in here.
+bool        bEnableSDKLog   = false;
+std::string sSDKLogLevel    = "Warning";
 // Overlay
 bool bLoadIcons      = true;
 bool bCacheIcons     = true;
@@ -50,6 +56,7 @@ static const std::set<std::string> stringKeys = {
     "LogFilename",
     "CustomEOSPath",
     "NamespaceId",
+    "SDKLogLevel",
 };
 
 std::map<std::string, std::map<std::string, void*>> configMap = {
@@ -74,6 +81,9 @@ std::map<std::string, std::map<std::string, void*>> configMap = {
         {"LogDLCQueries",         &bLogDLCQueries},
         {"LogAchievementQueries", &bLogAchievementQueries},
         {"LogOverlay",            &bLogOverlay},
+        // A1: SDK log capture (defaults: EnableSDKLog=false, SDKLogLevel=Warning)
+        {"EnableSDKLog",          &bEnableSDKLog},
+        {"SDKLogLevel",           &sSDKLogLevel},
     }},
     {"Overlay", {
         {"LoadIcons",        &bLoadIcons},
@@ -99,9 +109,11 @@ int iniHandler(void* user, const char* section_raw, const char* name_raw, const 
             if(value == "locked")        status = DlcOverrideStatus::LOCKED;
             else if(value == "original") status = DlcOverrideStatus::ORIGINAL;
             else if(value != "unlocked"){
+                // A1: Be lenient - warn but do not fail. A typo in one
+                // DLC entry must not prevent the game from launching.
                 showError("Invalid DLC_Override value '" + value + "' for: " + name
-                          + "  (expected: unlocked | locked | original)");
-                return FALSE;
+                          + "  (expected: unlocked | locked | original) - ignoring this entry");
+                return TRUE;
             }
             mDlcOverride[name] = status;
             return TRUE;
@@ -133,24 +145,36 @@ int iniHandler(void* user, const char* section_raw, const char* name_raw, const 
                 }
                 return TRUE;
             } catch(std::out_of_range&){
-                showError("Invalid name (" + name + ") at section [" + section + "]");
-                return FALSE;
+                // A1: Be lenient - unknown key in a known section. Warn
+                // but return TRUE so the parser keeps going and the game
+                // can still launch. The user can fix the typo later.
+                showError("Unknown config key '" + name + "' in section [" + section
+                          + "] - ignoring. (ScreamAPI will use the default value.)");
+                return TRUE;
             }
         } catch(std::out_of_range&){
-            showError("Invalid section name: " + section);
-            return FALSE;
+            // A1: Be lenient - unknown section. Warn but continue.
+            showError("Unknown config section [" + section + "] - ignoring.");
+            return TRUE;
         }
     } catch(InvalidBoolValue& ex){
-        showError("Invalid boolean value (" + ex.value + ") for name [" + name + "]");
-        return FALSE;
+        // A1: Be lenient - invalid bool value. Warn but continue with default.
+        showError("Invalid boolean value '" + ex.value + "' for [" + name
+                  + "] in section [" + section + "] - using default.");
+        return TRUE;
     }
 }
 
 void init(const std::wstring iniPath){
     int parseResult = ini_wparse(iniPath.c_str(), iniHandler, 0);
     if(parseResult != 0 && parseResult != -1){
-        showError("Unexpected config parse result at line: " + std::to_string(parseResult));
-        exit(1);
+        // A1: Do NOT call exit(1). Killing the host process because of
+        // a config typo is hostile - the user would rather launch with
+        // defaults than not launch at all. The handler has already
+        // shown a MessageBox for the specific problem; this second
+        // dialog just tells them where the parser stopped.
+        showError("Config parse issue at line: " + std::to_string(parseResult)
+                  + " - ScreamAPI will continue with default settings.");
     }
 }
 
@@ -167,6 +191,8 @@ std::string LogFilename()         { return sLogFilename; }
 bool LogDLCQueries()              { return bLogDLCQueries; }
 bool LogAchievementQueries()      { return bLogAchievementQueries; }
 bool LogOverlay()                 { return bLogOverlay; }
+bool EnableSDKLog()               { return bEnableSDKLog; }
+std::string SDKLogLevel()         { return sSDKLogLevel; }
 bool LoadIcons()                  { return bLoadIcons; }
 bool CacheIcons()                 { return bCacheIcons; }
 bool ValidateIcons()              { return bValidateIcons; }

@@ -45,6 +45,12 @@ static HMODULE FindEOSSDKRecursive(const fs::path& root, const std::wstring& dll
     return nullptr;
 }
 
+// Forward declaration: SetSDKLogPath is defined in eos_hooks.cpp at
+// global scope. Declared here (outside namespace ScreamAPI) so callers
+// inside the namespace resolve to the global symbol, not a phantom
+// ScreamAPI::SetSDKLogPath (which is what caused LNK2001).
+void SetSDKLogPath(const std::wstring& path);
+
 namespace ScreamAPI
 {
     HMODULE thisDLL = nullptr;
@@ -69,6 +75,21 @@ namespace ScreamAPI
                      Config::LogLevel(),
                      logPath.generic_wstring());
         PipeServer::SetLogPath(logPath.generic_wstring());
+
+        // A1: SDK log path = same dir as ScreamAPI.log, with _SDK suffix.
+        // The EOS SDK's own log stream is routed here via EOS_Logging_SetCallback
+        // (registered in the EOS_Platform_Create hook). Kept separate from
+        // ScreamAPI.log so the DLC log parser doesn't see SDK noise, and so
+        // users can open it in their preferred editor without drowning out
+        // ScreamAPI's curated output.
+        auto sdkLogPath = logPath;
+        sdkLogPath.replace_filename(L"ScreamAPI_SDK.log");
+        // SetSDKLogPath is forward-declared at file scope (above the
+        // namespace ScreamAPI block) so the linker resolves it to the
+        // global symbol defined in eos_hooks.cpp, not a phantom
+        // ScreamAPI::SetSDKLogPath (which is what caused LNK2001).
+        SetSDKLogPath(sdkLogPath.generic_wstring());
+        Logger::info("[SDKLOG] EOS SDK log will be written to: %ls", sdkLogPath.c_str());
 
         Logger::info("Epic Unlocker v" SCREAM_API_VERSION);
 

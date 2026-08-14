@@ -105,9 +105,15 @@ int ini_parse_string(const char* string, ini_handler handler, void* user);
 #endif
 
 /* Maximum line length for any line in INI file (stack or heap). Note that
-   this must be 3 more than the longest line (due to '\r', '\n', and '\0'). */
+   this must be 3 more than the longest line (due to '\r', '\n', and '\0').
+   Bumped from 200 -> 1024: the ScreamAPI.ini SDKLogLevel comment line is
+   ~190 bytes, and any user-added inline comment can easily push a line
+   past 200. With INI_USE_STACK=1 and INI_ALLOW_REALLOC=0, lines that
+   exceed the buffer get silently truncated by fgets(), which then makes
+   the next fgets() call return the remainder as a new "line" that
+   usually has no '=' or ':' and triggers a spurious parse error. */
 #ifndef INI_MAX_LINE
-#define INI_MAX_LINE 200
+#define INI_MAX_LINE 1024
 #endif
 
 /* Nonzero to allow heap line buffer to grow via realloc(), zero for a

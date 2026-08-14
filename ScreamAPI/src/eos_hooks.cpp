@@ -7,12 +7,88 @@
 #include "Logger.h"
 #include "MinHook.h"
 #include "dlc_catalog.h"
+#include "eos-sdk/eos_logging.h"
+#include "eos-sdk/eos_metrics.h"   // E1: EOS_Metrics_BeginPlayerSession / EndPlayerSession + their Options structs
 #include <mutex>
 #include <vector>
 #include <queue>
 #include <thread>
 #include <atomic>
 #include <map>
+#include <fstream>
+
+// ── A1: SDK log capture (separate file) ────────────────────────────────────
+// The EOS SDK emits rich diagnostics (every backend call, network failure,
+// token issue) via EOS_Logging_SetCallback. We route these to a separate
+// ScreamAPI_SDK.log file so they don't drown out ScreamAPI's curated output
+// in the main ScreamAPI.log, and so the DLC log parser doesn't see them.
+// The path is set once from ScreamAPI::init (after Config::LogFilename() is
+// known). Empty string = SDK logging disabled.
+static std::wstring g_sdkLogPath;
+static std::mutex    g_sdkLogMutex;
+// B: persistent file handle. Previously we opened/closed the file
+// PER LOG LINE (3 kernel syscalls per message: CreateFileW + WriteFile
+// + CloseHandle). At Verbose + ALL_CATEGORIES the SDK can fire
+// thousands of lines per second, which meant thousands of syscalls
+// per second -- enough to starve game startup. We now open once
+// (lazily, on first message) and keep the handle open.
+static HANDLE g_sdkLogFile = INVALID_HANDLE_VALUE;
+
+void SetSDKLogPath(const std::wstring& path) {
+    std::lock_guard<std::mutex> lk(g_sdkLogMutex);
+    // Close any previously-open handle
+    if (g_sdkLogFile != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_sdkLogFile);
+        g_sdkLogFile = INVALID_HANDLE_VALUE;
+    }
+    g_sdkLogPath = path;
+}
+
+// D: re-entrancy guard. std::mutex is NOT recursive -- if anything
+// in the write path (CreateFileW, WriteFile, heap alloc) re-enters
+// the EOS SDK and triggers another log message on the same thread,
+// we would deadlock on the mutex we already hold. thread_local flag
+// drops the re-entrant message instead of deadlocking.
+static thread_local bool g_inSdkLogCallback = false;
+
+static void EOS_CALL SdkLogCallback(const EOS_LogMessage* Message) {
+    if (g_sdkLogPath.empty() || Message == nullptr) return;
+    if (g_inSdkLogCallback) return;  // re-entrancy guard
+    g_inSdkLogCallback = true;
+    std::lock_guard<std::mutex> lk(g_sdkLogMutex);
+    // B: lazy-open the file handle once, keep it open
+    if (g_sdkLogFile == INVALID_HANDLE_VALUE) {
+        g_sdkLogFile = CreateFileW(g_sdkLogPath.c_str(), FILE_APPEND_DATA,
+                                    FILE_SHARE_READ, nullptr, OPEN_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (g_sdkLogFile == INVALID_HANDLE_VALUE) {
+            g_inSdkLogCallback = false;
+            return;
+        }
+    }
+    // Format: [HH:MM:SS.mmm] [LEVEL] [Category] Message
+    SYSTEMTIME t; GetLocalTime(&t);
+    char header[64];
+    sprintf_s(header, 64, "[%02d:%02d:%02d.%03d] ",
+              t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
+    const char* levelStr = "???";
+    switch (Message->Level) {
+        case EOS_ELogLevel::EOS_LOG_Fatal:       levelStr = "FATAL"; break;
+        case EOS_ELogLevel::EOS_LOG_Error:       levelStr = "ERROR"; break;
+        case EOS_ELogLevel::EOS_LOG_Warning:     levelStr = "WARN";  break;
+        case EOS_ELogLevel::EOS_LOG_Info:        levelStr = "INFO";  break;
+        case EOS_ELogLevel::EOS_LOG_Verbose:     levelStr = "VERB";  break;
+        case EOS_ELogLevel::EOS_LOG_VeryVerbose: levelStr = "VVERB"; break;
+        default: break;
+    }
+    std::string line = std::string(header) + "[" + levelStr + "] ";
+    if (Message->Category) line += "[" + std::string(Message->Category) + "] ";
+    if (Message->Message)  line += Message->Message;
+    line += "\r\n";
+    DWORD written = 0;
+    WriteFile(g_sdkLogFile, line.data(), (DWORD)line.size(), &written, nullptr);
+    g_inSdkLogCallback = false;
+}
 
 // Defined in eos_ecom_entitlements.cpp — single source of truth for the catalog.
 extern void EnsureCatalogFetched();
@@ -68,6 +144,16 @@ namespace Original {
     decltype(&EOS_Auth_GetLoggedInAccountByIndex) Auth_GetLoggedInAccountByIndex = nullptr;
     // Optional
     decltype(&EOS_Auth_AddNotifyLoginStatusChanged) Auth_AddNotifyLoginStatusChanged = nullptr;
+
+    // Metrics (E1: BlockMetrics config knob)
+    decltype(&EOS_Metrics_BeginPlayerSession) Metrics_BeginPlayerSession = nullptr;
+    decltype(&EOS_Metrics_EndPlayerSession) Metrics_EndPlayerSession = nullptr;
+
+    // Logging (A1: not hooked, just resolved via GetProcAddress so we can
+    // call EOS_Logging_SetCallback from inside the proxy DLL without
+    // tripping the linker forwarder)
+    decltype(&EOS_Logging_SetCallback) Logging_SetCallback = nullptr;
+    decltype(&EOS_Logging_SetLogLevel) Logging_SetLogLevel = nullptr;
 }
 
 // Helper to get the decorated name for 32-bit
@@ -104,6 +190,8 @@ static std::string GetDecoratedName(const char* baseName) {
     else if (strcmp(baseName, "EOS_Auth_Login") == 0) ss << "16";
     else if (strcmp(baseName, "EOS_Auth_GetLoggedInAccountByIndex") == 0) ss << "8";
     else if (strcmp(baseName, "EOS_Auth_AddNotifyLoginStatusChanged") == 0) ss << "16";
+    else if (strcmp(baseName, "EOS_Metrics_BeginPlayerSession") == 0) ss << "8";
+    else if (strcmp(baseName, "EOS_Metrics_EndPlayerSession") == 0) ss << "8";
     else {
         Logger::warn("[HOOK] Unknown decorated name for: %s", baseName);
         ss << "16";
@@ -243,6 +331,55 @@ EOS_HPlatform EOS_CALL Platform_Create(const EOS_Platform_Options* Options) {
     EOS_HPlatform result = Original::Platform_Create(Options);
     Util::hPlatform = result;
     Logger::info("[HOOK] Platform created: %p", result);
+
+    // ── A1: Register SDK log callback (DEFERRED) ──────────────────────────
+    // Previously this ran INSIDE the Platform_Create hook, which meant the
+    // SDK started firing log messages while Platform_Create was still on
+    // the stack. Subsequent internal SDK work funneled through our slow
+    // file-I/O callback, stretching out the most timing-sensitive call.
+    // Games with strict startup timeouts would abort.
+    //
+    // Fix: spawn a background thread that sleeps 500ms (so Platform_Create
+    // has returned and the game is past the critical init window), THEN
+    // registers the callback. Also gated by Config::EnableSDKLog() so the
+    // feature is OPT-IN (default off -- Verbose SDK logging can still lag
+    // startup even with the deferred registration).
+    if (!g_sdkLogPath.empty() && Config::EnableSDKLog()) {
+        std::thread([]() {
+            Sleep(500);  // let Platform_Create return + game settle
+            if (!Original::Logging_SetCallback || !Original::Logging_SetLogLevel) {
+                Logger::warn("[HOOK] SDK log functions not resolved in original DLL -- SDK log disabled");
+                return;
+            }
+            // Map config string -> EOS_ELogLevel. Default to Warning
+            // (NOT Verbose) -- Verbose produces thousands of lines per
+            // second and can lag game startup even with deferred registration.
+            std::string lvlStr = Config::SDKLogLevel();
+            EOS_ELogLevel lvl = EOS_ELogLevel::EOS_LOG_Warning;
+            if      (lvlStr == "Off")         return;  // disabled entirely
+            else if (lvlStr == "Fatal")       lvl = EOS_ELogLevel::EOS_LOG_Fatal;
+            else if (lvlStr == "Error")       lvl = EOS_ELogLevel::EOS_LOG_Error;
+            else if (lvlStr == "Warning")     lvl = EOS_ELogLevel::EOS_LOG_Warning;
+            else if (lvlStr == "Info")        lvl = EOS_ELogLevel::EOS_LOG_Info;
+            else if (lvlStr == "Verbose")     lvl = EOS_ELogLevel::EOS_LOG_Verbose;
+            else if (lvlStr == "VeryVerbose") lvl = EOS_ELogLevel::EOS_LOG_VeryVerbose;
+            // Unknown value -> fall back to Warning (logged once)
+            else Logger::warn("[HOOK] Unknown SDKLogLevel \"%s\", falling back to Warning", lvlStr.c_str());
+
+            EOS_EResult cbRes = Original::Logging_SetCallback(SdkLogCallback);
+            if (cbRes == EOS_EResult::EOS_Success) {
+                Original::Logging_SetLogLevel(EOS_ELogCategory::EOS_LC_ALL_CATEGORIES, lvl);
+                Logger::info("[HOOK] SDK log callback registered (level=%s) -> %ls",
+                             lvlStr.c_str(), g_sdkLogPath.c_str());
+            } else {
+                Logger::warn("[HOOK] EOS_Logging_SetCallback failed: %s",
+                             EOS_EResult_ToString(cbRes));
+            }
+        }).detach();
+    } else if (!g_sdkLogPath.empty() && !Config::EnableSDKLog()) {
+        Logger::info("[HOOK] SDK log capture disabled (EnableSDKLog=false in config)");
+    }
+
     if (result && Config::EnableOverlay()) {
         std::thread([]() {
             Sleep(500);
@@ -609,9 +746,80 @@ void EOS_CALL Ecom_Entitlement_Release(EOS_Ecom_Entitlement* Entitlement) {
     }
 }
 
+// B1: Hook EOS_Ecom_QueryOwnershipBySandboxIds to apply the same unlock
+// logic as EOS_Ecom_QueryOwnership. Some multi-title launchers query ownership
+// per-sandbox instead of per-item; without this hook, DLC unlocks fail silently
+// for those titles. The callback walks each SandboxIdItemOwnership and logs
+// the per-item ownership state according to Config::IsDlcUnlocked.
+//
+// NOTE: We cannot expand the SDK-owned OwnedCatalogItemIds array in place
+// (it would require allocating a new array and replacing the pointer, which
+// risks a use-after-free when the SDK frees its copy). For now this hook
+// logs the unlock-eligible items and applies ForceSuccess if the original
+// query failed. A future revision that needs to ADD items the SDK didn't
+// return will need to allocate a per-callback owned vector and swap it in.
 void EOS_CALL Ecom_QueryOwnershipBySandboxIds(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipBySandboxIdsOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipBySandboxIdsCallback CompletionDelegate) {
-    Logger::debug("[HOOK] EOS_Ecom_QueryOwnershipBySandboxIds called");
-    Original::Ecom_QueryOwnershipBySandboxIds(Handle, Options, ClientData, CompletionDelegate);
+    Logger::info("[HOOK] EOS_Ecom_QueryOwnershipBySandboxIds called");
+
+    if (!Config::EnableOwnershipUnlocker()) {
+        Original::Ecom_QueryOwnershipBySandboxIds(Handle, Options, ClientData, CompletionDelegate);
+        return;
+    }
+
+    EnsureCatalogFetched();
+    auto catalog = GetCatalogSnapshot();
+
+    if (Options && Options->SandboxIdsCount > 0) {
+        Logger::dlc("[HOOK] Sandbox ownership query: %u sandbox(s)", Options->SandboxIdsCount);
+        for (uint32_t i = 0; i < Options->SandboxIdsCount; i++) {
+            Logger::dlc("[HOOK]   SandboxId: %S", Options->SandboxIds[i]);
+        }
+    }
+
+    struct Container {
+        void* ClientData;
+        EOS_Ecom_OnQueryOwnershipBySandboxIdsCallback CompletionDelegate;
+    };
+    auto* container = new Container{ClientData, CompletionDelegate};
+    Original::Ecom_QueryOwnershipBySandboxIds(Handle, Options, container,
+        [](const EOS_Ecom_QueryOwnershipBySandboxIdsCallbackInfo* Data) {
+            auto* c = static_cast<Container*>(Data->ClientData);
+            auto* mData = const_cast<EOS_Ecom_QueryOwnershipBySandboxIdsCallbackInfo*>(Data);
+
+            if (mData->ResultCode != EOS_EResult::EOS_Success) {
+                Logger::warn("[HOOK] EOS_Ecom_QueryOwnershipBySandboxIds failed: %s",
+                    EOS_EResult_ToString(mData->ResultCode));
+                if (Config::ForceSuccess()) {
+                    Logger::warn("[HOOK] Forcing EOS_Success");
+                    mData->ResultCode = EOS_EResult::EOS_Success;
+                }
+            }
+
+            // Log per-sandbox ownership for diagnostics + apply unlock flag
+            // to existing entries. Items the SDK didn't return as owned but
+            // that Config says should be unlocked are logged but NOT added
+            // to the array (see NOTE above).
+            if (mData->ResultCode == EOS_EResult::EOS_Success && mData->SandboxIdItemOwnershipsCount > 0) {
+                Logger::dlc("[HOOK] Responding with %u sandbox ownership group(s):",
+                            mData->SandboxIdItemOwnershipsCount);
+                for (uint32_t s = 0; s < mData->SandboxIdItemOwnershipsCount; s++) {
+                    auto* sb = const_cast<EOS_Ecom_SandboxIdItemOwnership*>(mData->SandboxIdItemOwnerships + s);
+                    Logger::dlc("[HOOK]   Sandbox %S: %u owned item(s)",
+                                sb->SandboxId, sb->OwnedCatalogItemIdsCount);
+                    for (uint32_t i = 0; i < sb->OwnedCatalogItemIdsCount; i++) {
+                        const char* itemId = sb->OwnedCatalogItemIds[i];
+                        bool unlocked = Config::IsDlcUnlocked(std::string(itemId), true);
+                        Logger::dlc("[HOOK]     [%s] %s",
+                                    unlocked ? "Owned" : "Not Owned", itemId);
+                    }
+                }
+            }
+
+            mData->ClientData = c->ClientData;
+            c->CompletionDelegate(Data);
+            delete c;
+        }
+    );
 }
 
 void EOS_CALL Ecom_QueryOwnershipToken(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipTokenOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipTokenCallback CompletionDelegate) {
@@ -651,6 +859,26 @@ EOS_EpicAccountId EOS_CALL Auth_GetLoggedInAccountByIndex(EOS_HAuth Handle, int3
 void EOS_CALL Auth_AddNotifyLoginStatusChanged(EOS_HAuth Handle, const EOS_Auth_AddNotifyLoginStatusChangedOptions* Options, void* ClientData, const EOS_Auth_OnLoginStatusChangedCallback NotificationFn) {
     Logger::debug("[HOOK] EOS_Auth_AddNotifyLoginStatusChanged called");
     Original::Auth_AddNotifyLoginStatusChanged(Handle, Options, ClientData, NotificationFn);
+}
+
+// ── Metrics hooks (E1: BlockMetrics config knob) ──────────────────────────
+// When Config::BlockMetrics() is true, no-op both BeginPlayerSession and
+// EndPlayerSession — game telemetry stays local. The config knob existed in
+// the INI for years but was never read; this finally wires it up.
+EOS_EResult EOS_CALL Metrics_BeginPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_BeginPlayerSessionOptions* Options) {
+    if (Config::BlockMetrics()) {
+        Logger::info("[HOOK] EOS_Metrics_BeginPlayerSession blocked (BlockMetrics=true)");
+        return EOS_EResult::EOS_Success;
+    }
+    return Original::Metrics_BeginPlayerSession(Handle, Options);
+}
+
+EOS_EResult EOS_CALL Metrics_EndPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_EndPlayerSessionOptions* Options) {
+    if (Config::BlockMetrics()) {
+        Logger::debug("[HOOK] EOS_Metrics_EndPlayerSession blocked (BlockMetrics=true)");
+        return EOS_EResult::EOS_Success;
+    }
+    return Original::Metrics_EndPlayerSession(Handle, Options);
 }
 
 } // namespace Hooks
@@ -718,6 +946,30 @@ bool InitializeHooks(HMODULE originalDLL) {
     INSTALL_HOOK(originalDLL, EOS_Auth_Login, Hooks::Auth_Login, Original::Auth_Login);
     INSTALL_HOOK(originalDLL, EOS_Auth_GetLoggedInAccountByIndex, Hooks::Auth_GetLoggedInAccountByIndex, Original::Auth_GetLoggedInAccountByIndex);
     INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Auth_AddNotifyLoginStatusChanged, Hooks::Auth_AddNotifyLoginStatusChanged, Original::Auth_AddNotifyLoginStatusChanged);
+
+    Logger::info("[HOOK] Installing Metrics hooks (BlockMetrics=%s)...",
+                 Config::BlockMetrics() ? "true" : "false");
+    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Metrics_BeginPlayerSession, Hooks::Metrics_BeginPlayerSession, Original::Metrics_BeginPlayerSession);
+    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Metrics_EndPlayerSession, Hooks::Metrics_EndPlayerSession, Original::Metrics_EndPlayerSession);
+
+    // A1: Resolve logging function pointers (not hooked -- we call them
+    // directly from the Platform_Create hook to register SdkLogCallback).
+    // Using GetProcAddress avoids the LNK2001 from the LinkerExports
+    // forwarder pragma (which only re-exports, does not make importable).
+    {
+        auto resolve = [originalDLL](const char* name, auto& outPtr) {
+            using FuncPtr = decltype(outPtr);
+            auto p = reinterpret_cast<FuncPtr>(GetProcAddress(originalDLL, name));
+            if (p) {
+                outPtr = p;
+                Logger::debug("[HOOK] Resolved %s -> %p", name, p);
+            } else {
+                Logger::warn("[HOOK] Could not resolve %s (SDK log capture disabled)", name);
+            }
+        };
+        resolve("EOS_Logging_SetCallback",  Original::Logging_SetCallback);
+        resolve("EOS_Logging_SetLogLevel",  Original::Logging_SetLogLevel);
+    }
 
     hooksInitialized = true;
 

@@ -31,6 +31,15 @@ struct Overlay_Achievement{
         // server-side achievement unlock.
         uint32_t StatThresholdsCount;
         StatThreshold* StatThresholds;
+        // A3: Player progress 0..1 from EOS_Achievements_PlayerAchievement::Progress.
+        // 0 = no progress, 1 = fully complete (will be Unlocked). Used by the GUI
+        // to render a real progress bar instead of just locked/unlocked.
+        float Progress;
+        // A3: Human-readable stat threshold annotation, e.g. "12/50 kills" or
+        // "3/5 levels". Built from StatInfo[i]::{CurrentValue,ThresholdValue,Name}.
+        // Heap-allocated, owned by Overlay_Achievement (freed in freeAchievementStatThresholds).
+        // nullptr if no stat info available (non-stat-gated achievements).
+        char* StatThresholdLabel;
 };
 
 typedef std::vector<Overlay_Achievement> Achievements;

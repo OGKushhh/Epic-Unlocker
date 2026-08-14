@@ -220,7 +220,9 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
               />
             </div>
             <span className="stat-text">
-              {Math.round(ach.progress * 100)}%
+              {ach.statThreshold
+                ? `${ach.statThreshold} · ${Math.round(ach.progress * 100)}%`
+                : `${Math.round(ach.progress * 100)}%`}
             </span>
           </>
         )}

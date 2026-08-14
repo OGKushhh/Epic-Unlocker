@@ -84,9 +84,14 @@ function adaptAchievement(r: RustAchievement): Achievement {
     desc: r.description,
     unlocked,
     hidden: r.isHidden,
-    // Wire protocol doesn't carry progress; default to 0/1.
-    // Real progress will come from the stats interface in a later iteration.
-    progress: unlocked ? 1 : 0,
+    // A3: Wire protocol now carries real progress (0..1) from
+    // EOS_Achievements_PlayerAchievement::Progress. Fall back to 0/1
+    // for older DLL builds that don't send the progress field.
+    progress: unlocked ? 1 : (r.progress ?? 0),
+    // A3: Pass through the stat threshold label (e.g. "12/50 kills")
+    // for the GUI to render next to the progress bar. Undefined when
+    // the DLL didn't send one (older builds or non-stat-gated achievements).
+    statThreshold: r.statThreshold ?? undefined,
   };
 }
 
@@ -112,6 +117,9 @@ export interface GameDataState {
   entitlementCount: number;
   logLines: LogLine[];
   logPath: string;
+  /** Real byte size of the log file on disk (from get_log_tail return).
+   *  Undefined when no log is connected yet. Drives the statusbar display. */
+  logFileSize?: number;
   connection: ConnectionStatus | null;
   loading: boolean;
   /** true ONLY when running in browser dev mode with mockup data */
@@ -139,6 +147,8 @@ export function useGameData(): GameDataState {
     inTauri ? [] : mockupLogLines
   );
   const [logPath, setLogPath] = useState<string>("");
+  // Log size fix: real byte size of ScreamAPI.log (from get_log_tail return).
+  const [logFileSize, setLogFileSize] = useState<number | undefined>(undefined);
   const [connection, setConnection] = useState<ConnectionStatus | null>(null);
   const [loading, setLoading] = useState(inTauri);
 
@@ -234,6 +244,7 @@ export function useGameData(): GameDataState {
       const tail: LogTail = await getLogTail(20000);
       setLogLines(tail.lines.map(adaptLogLine));
       setLogPath(tail.path);
+      if (typeof tail.fileSize === "number") setLogFileSize(tail.fileSize);
     } catch (e) {
       console.error("get_log_tail failed:", e);
       setLogLines([]);
@@ -386,7 +397,12 @@ export function useGameData(): GameDataState {
     // gives near-live feedback without thrashing the disk.
     const logPollHandle = window.setInterval(() => {
       getLogTail(20000)
-        .then((tail) => setLogLines(tail.lines.map(adaptLogLine)))
+        .then((tail) => {
+          setLogLines(tail.lines.map(adaptLogLine));
+          // Log size fix: capture the real byte size from the tail return
+          // (was previously estimated as logLines.length * 0.045 in the statusbar).
+          if (typeof tail.fileSize === "number") setLogFileSize(tail.fileSize);
+        })
         .catch(() => {});
     }, 1000);
 
@@ -470,6 +486,7 @@ export function useGameData(): GameDataState {
     entitlementCount,
     logLines,
     logPath,
+    logFileSize,
     connection,
     loading,
     isDevMode: !inTauri,
