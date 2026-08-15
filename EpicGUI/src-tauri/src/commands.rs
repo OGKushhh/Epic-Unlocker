@@ -9,7 +9,8 @@ use tokio::sync::RwLock;
 use crate::dlc_log_parser;
 use crate::pipe_client::PipeClientState;
 use crate::pipe_protocol::*;
-use crate::state::{Achievement, AppState, ConnectionStatus, DlcEntry, LOG_MAX_LINES, LOG_TRIM_TO};
+use crate::state::{Achievement, AppState, ConnectionStatus, DlcEntry, GameInfo, LOG_MAX_LINES, LOG_TRIM_TO};
+use crate::rarity::{self, AchievementRarity, RarityCache};
 
 // ── Connection ──────────────────────────────────────────────────────────────
 #[tauri::command]
@@ -840,4 +841,65 @@ fn read_log_incremental(path: &str, last_pos: u64) -> std::io::Result<Incrementa
         reset,
         file_size,
     })
+}
+
+// ── G4/A2: Game Info + Achievement Rarity ────────────────────────────────────
+
+/// Returns the GameInfo received from the DLL (sandbox ID, product ID, EOS version).
+/// Empty strings until the GameInfo packet arrives.
+#[tauri::command]
+pub async fn get_game_info(
+    state: State<'_, Arc<RwLock<AppState>>>,
+) -> Result<GameInfo, String> {
+    Ok(state.read().await.game_info.clone())
+}
+
+/// Fetches achievement rarity data from external APIs (egdata primary,
+/// Epic GraphQL fallback) and merges it into the in-memory achievements.
+/// Returns the number of achievements that got rarity data.
+#[tauri::command]
+pub async fn fetch_achievement_rarity(
+    state: State<'_, Arc<RwLock<AppState>>>,
+    rarity_cache: State<'_, Arc<RwLock<RarityCache>>>,
+) -> Result<u32, String> {
+    let sandbox_id = {
+        let s = state.read().await;
+        s.game_info.sandbox_id.clone()
+    };
+
+    if sandbox_id.is_empty() {
+        return Err("No sandbox ID available - connect to a game first".to_string());
+    }
+
+    // Build a reqwest client (reuse across requests)
+    let client = reqwest::Client::new();
+
+    // Fetch rarity data (egdata primary, Epic GraphQL fallback)
+    let rarity_data = {
+        let mut cache = rarity_cache.write().await;
+        rarity::fetch_rarity(&sandbox_id, &client, &mut cache).await?
+    };
+
+    // Build a lookup map by achievement ID for fast merging
+    let rarity_by_id: std::collections::HashMap<String, &AchievementRarity> = rarity_data
+        .iter()
+        .map(|r| (r.id.clone(), r))
+        .collect();
+
+    // Merge rarity data into achievements
+    let mut merged_count = 0u32;
+    {
+        let mut s = state.write().await;
+        for ach in &mut s.achievements {
+            if let Some(rd) = rarity_by_id.get(&ach.id) {
+                ach.rarity_percent = Some(rd.completed_percent);
+                ach.rarity_tier = Some(rd.tier);
+                merged_count += 1;
+            }
+        }
+    }
+
+    log::info!("[G4] Merged rarity data for {} achievements", merged_count);
+
+    Ok(merged_count)
 }

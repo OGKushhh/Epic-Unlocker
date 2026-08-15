@@ -10,6 +10,7 @@ namespace Util{
 EOS_HPlatform hPlatform = nullptr;
 
 std::string g_namespace_id;
+std::string g_product_id;
 
 std::filesystem::path getDLLparentDir(HMODULE hModule){
         WCHAR modulePathBuffer[MAX_PATH];

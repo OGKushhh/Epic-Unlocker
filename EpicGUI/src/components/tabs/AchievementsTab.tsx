@@ -6,16 +6,16 @@
  *   - 4 filter pills: All / Locked / Unlocked / Hidden
  *   - Scrollable list of 52px rows
  *   - Each row: emoji icon + title + desc + progress bar + badges + Unlock btn
- *   - Row hover → achievement tooltip (title + desc)
- *   - Stat-gated badge hover → explanation tooltip (how stat-gated works + 5–30s wait)
+ *   - Row hover -> achievement tooltip (title + desc) ONLY when description is truncated/overflowed
+ *   - Stat-gated badge hover -> explanation tooltip (how stat-gated works + 5-30s wait)
+ *   - G4: Rarity badge (Bronze/Silver/Gold/Platinum) + unlock timestamp
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Achievement } from "../../data/mockupData";
+import type { Achievement, RarityTier } from "../../data/mockupData";
 
 // Detect Tauri runtime so we can fall back to emoji in browser dev mode
-// (convertFileSrc throws if called outside Tauri).
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
@@ -34,6 +34,42 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: "unlocked", label: "Unlocked" },
   { id: "hidden", label: "Hidden" },
 ];
+
+// -- Rarity tier display -------------------------------------------------------
+
+const RARITY_COLORS: Record<RarityTier, string> = {
+  bronze: "#CD7F32",
+  silver: "#C0C0C0",
+  gold: "#FFD700",
+  platinum: "#E5E4E2",
+  unknown: "#808080",
+};
+
+const RARITY_LABELS: Record<RarityTier, string> = {
+  bronze: "Bronze",
+  silver: "Silver",
+  gold: "Gold",
+  platinum: "Platinum",
+  unknown: "?",
+};
+
+function formatUnlockTime(iso: string | undefined): string | null {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return null; // future = glitch
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  } catch {
+    return null;
+  }
+}
 
 interface AchievementsTabProps {
   active: boolean;
@@ -62,11 +98,9 @@ export default function AchievementsTab({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return achievements.filter((a) => {
-      // Filter pill
       if (filter === "locked" && a.unlocked) return false;
       if (filter === "unlocked" && !a.unlocked) return false;
       if (filter === "hidden" && !a.hidden) return false;
-      // Search
       if (!q) return true;
       return (
         a.title.toLowerCase().includes(q) ||
@@ -81,7 +115,7 @@ export default function AchievementsTab({
       <div className="ach-toolbar">
         <input
           className="search"
-          placeholder="Search achievements…"
+          placeholder="Search achievements..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -100,7 +134,7 @@ export default function AchievementsTab({
         {loading && (
           <EmptyState
             icon="⏳"
-            title="Connecting…"
+            title="Connecting..."
             body="Waiting for the Epic Unlocker pipe to deliver the achievement list."
           />
         )}
@@ -109,7 +143,7 @@ export default function AchievementsTab({
           <EmptyState
             icon="🔌"
             title="Not connected"
-            body="Launch a game with Epic Unlocker injected to establish the pipe connection. The list will populate automatically once the game's EOS SDK is hooked."
+            body="Launch a game with Epic Unlocker injected to establish the pipe connection."
           />
         )}
 
@@ -153,7 +187,6 @@ export default function AchievementsTab({
 interface AchievementRowProps {
   ach: Achievement;
   emoji: string;
-  /** Tauri webview URL for the locally-cached icon, or null to fall back to emoji. */
   iconSrc?: string | null;
   onHover: (ach: Achievement | null, e?: { clientX: number; clientY: number }) => void;
   onHoverStatGated: (e: { clientX: number; clientY: number }) => void;
@@ -161,25 +194,56 @@ interface AchievementRowProps {
 }
 
 function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlock }: AchievementRowProps) {
-  // Track whether the cached <img> failed to load (corrupt download, file
-  // deleted after cache, etc.). When that happens, we fall back to the emoji
-  // so the row never shows an empty icon box.
   const [imgFailed, setImgFailed] = useState(false);
-  // If the iconSrc changes (e.g. user re-fetched icons), reset the failure flag
-  // so we try the new image instead of sticking on emoji forever.
+  const [flickerKey, setFlickerKey] = useState(0);
+  const descRef = useRef<HTMLDivElement>(null);
+  const [descTruncated, setDescTruncated] = useState(false);
   useEffect(() => {
     setImgFailed(false);
   }, [iconSrc]);
 
+  // Check if the description text overflows (is truncated by CSS ellipsis)
+  useEffect(() => {
+    const el = descRef.current;
+    if (el) {
+      setDescTruncated(el.scrollWidth > el.clientWidth);
+    }
+  }, [ach.desc]);
+
   const showImg = iconSrc && !imgFailed;
+  const unlockAgo = formatUnlockTime(ach.unlockTime);
+
+  // Only trigger the row tooltip when the description is truncated (too long for the row)
+  const handleRowMouseEnter = (e: React.MouseEvent) => {
+    if (descTruncated) {
+      onHover(ach, e);
+    }
+  };
 
   return (
     <div
-      className={`ach-row ${ach.unlocked ? "unlocked" : "locked"}`}
-      onMouseEnter={(e) => onHover(ach, e)}
+      className={`ach-row ${ach.unlocked ? "unlocked" : "locked"}${flickerKey > 0 ? " copy-flicker" : ""}`}
+      onMouseEnter={handleRowMouseEnter}
       onMouseLeave={() => onHover(null)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        navigator.clipboard.writeText(ach.id).catch(() => {});
+        // Bump key to re-trigger the CSS animation
+        setFlickerKey((k) => k + 1);
+      }}
+      title={`Right-click to copy ID: ${ach.id}`}
+      // onAnimationEnd cleans up the class so it can re-trigger next time
+      onAnimationEnd={() => setFlickerKey(0)}
     >
-      <div className="ach-icon">
+      <div
+        className="ach-icon"
+        title=""
+        onMouseEnter={(e) => {
+          // Suppress the row tooltip while hovering the icon
+          e.stopPropagation();
+          if (descTruncated) onHover(null);
+        }}
+      >
         {showImg ? (
           <img
             src={iconSrc!}
@@ -192,22 +256,29 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
               objectFit: "contain",
               borderRadius: 4,
               imageRendering: "auto",
-              // Desaturate locked achievements slightly so the unlocked ones pop.
               filter: ach.unlocked ? "none" : "grayscale(0.4) opacity(0.85)",
             }}
-            // If the image fails to load (e.g. corrupt download, file deleted
-            // from cache after fetch), fall back to the emoji instead of
-            // leaving an empty box.
             onError={() => setImgFailed(true)}
           />
         ) : (
           emoji
         )}
       </div>
+      {/* Preview popover — sibling of .ach-icon so parent opacity doesn't dim it */}
+      <div className="icon-preview">
+        {showImg ? (
+          <img
+            src={iconSrc!}
+            alt=""
+          />
+        ) : (
+          <span className="preview-emoji">{emoji}</span>
+        )}
+      </div>
 
       <div className="ach-body">
         <div className="ach-title">{ach.title}</div>
-        <div className="ach-desc">{ach.desc}</div>
+        <div className="ach-desc" ref={descRef}>{ach.desc}</div>
       </div>
 
       <div className="ach-meta">
@@ -229,6 +300,25 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
 
         {ach.hidden && <span className="badge hidden">Hidden</span>}
 
+        {/* G4: Rarity badge */}
+        {ach.rarityTier && ach.rarityTier !== "unknown" && (
+          <span
+            className="badge rarity"
+            style={{
+              color: RARITY_COLORS[ach.rarityTier],
+              borderColor: RARITY_COLORS[ach.rarityTier],
+            }}
+            title={ach.rarityPercent != null
+              ? `${RARITY_LABELS[ach.rarityTier]} — ${ach.rarityPercent.toFixed(1)}% of players`
+              : RARITY_LABELS[ach.rarityTier]}
+          >
+            {RARITY_LABELS[ach.rarityTier]}
+            {ach.rarityPercent != null && (
+              <span className="rarity-pct">{ach.rarityPercent.toFixed(1)}%</span>
+            )}
+          </span>
+        )}
+
         {ach.unlocked ? (
           <span className="badge unlocked">Unlocked</span>
         ) : (
@@ -240,12 +330,22 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
                 e.stopPropagation();
                 onHoverStatGated(e);
               }}
-              onMouseLeave={(e) => onHover(ach, e)}
+              onMouseLeave={() => {
+                // Stat-gated tooltip is standalone — always close on leave
+                onHover(null);
+              }}
             >
               Stat-gated
             </span>
             <span className="badge locked">Locked</span>
           </>
+        )}
+
+        {/* G4: Unlock timestamp */}
+        {ach.unlocked && unlockAgo && (
+          <span className="badge unlock-time" title={ach.unlockTime}>
+            {unlockAgo}
+          </span>
         )}
 
         <button
@@ -263,7 +363,7 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
   );
 }
 
-// ── Empty state (used for loading / disconnected / no-data / no-matches) ─────
+// -- Empty state ---------------------------------------------------------------
 
 interface EmptyStateProps {
   icon: string;

@@ -41,7 +41,7 @@ chrono = "0.4"
 
 # HTTP client for downloading achievement icons (independent of the in-game overlay).
 # rustls-tls avoids pulling in OpenSSL on Windows (simpler cross-compile story).
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 futures-util = "0.3"
 
 # Named pipe client (Windows) / Unix domain socket fallback (other OSes)

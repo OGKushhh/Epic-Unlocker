@@ -65,6 +65,7 @@ export default function App() {
     unlockOne,
     unlockAll,
     fetchIcons,
+    fetchRarity,
   } = useGameData();
 
   const connected = connection?.connected ?? false;
@@ -149,7 +150,7 @@ export default function App() {
       showToast("🔌 Not connected", "Launch a game with Epic Unlocker first to load achievements to fetch icons for.");
       return;
     }
-    showToast("🖼️ Fetching icons…", "Downloading achievement icons to local cache.");
+    showToast("*️⃣ Fetching icons…", "Downloading achievement icons to local cache.");
     try {
       const results = await fetchIcons();
       const ok = results.filter((r) => r.status === "ok").length;
@@ -172,6 +173,25 @@ export default function App() {
       showToast("❌ Fetch failed", msg);
     }
   }, [fetchIcons, showToast, connected]);
+
+  const handleFetchRarityClick = useCallback(async () => {
+    if (!connected) {
+      showToast("🔌 Not connected", "Launch a game with Epic Unlocker first to fetch rarity data.");
+      return;
+    }
+    showToast("🏆 Fetching rarity…", "Querying egdata + Epic GraphQL for achievement rarity.");
+    try {
+      const count = await fetchRarity();
+      if (count > 0) {
+        showToast("✅ Rarity fetched", `${count} achievements now have rarity data (Bronze/Silver/Gold/Platinum).`);
+      } else {
+        showToast("⚠️ No rarity data", "No matching achievements found in egdata or Epic GraphQL. The game may not be listed.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast("❌ Rarity fetch failed", msg);
+    }
+  }, [fetchRarity, showToast, connected]);
 
   const handleConfirmUnlockAll = useCallback(async () => {
     showToast("🚀 Unlock All Started", `Queued all ${achievements.length} achievements.`);
@@ -263,6 +283,7 @@ export default function App() {
           onUnlockAllClick={handleUnlockAllClick}
           onRefreshClick={handleRefreshClick}
           onFetchIconsClick={handleFetchIconsClick}
+          onFetchRarityClick={handleFetchRarityClick}
         />
 
         <div className="content">

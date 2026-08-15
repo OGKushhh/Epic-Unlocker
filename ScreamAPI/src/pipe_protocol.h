@@ -16,6 +16,7 @@ enum class PktType : uint8_t {
     AchUpdate   = 0x02,  // single achievement state changed
     LogPath     = 0x03,  // absolute path to ScreamAPI.log (UTF-8)
     DlcCatalog  = 0x04,  // full id→title map from Epic's GraphQL catalog
+    GameInfo    = 0x05,  // sandbox ID + product ID + EOS version (for external API calls)
 
     // GUI → DLL
     CmdUnlock    = 0x10,  // unlock one achievement by id
@@ -65,6 +66,11 @@ struct AchEntry {
     // A3: offset of the StatThresholdLabel string in the blob (0 = no label).
     // e.g. "12/50 kills" — the GUI renders this next to the progress bar.
     uint32_t statThresholdOff;
+    // G4: offset of the UnlockTimestamp string in the blob (0 = no timestamp).
+    // Stored as ISO 8601 string (e.g. "2024-03-15T18:30:00Z") for readability.
+    // -1 from the SDK (not unlocked) is never stored; locked achievements
+    // have unlockTimeOff == 0.
+    uint32_t unlockTimeOff;
 };
 
 // ── AchUpdate payload ─────────────────────────────────────────────────────────
@@ -108,6 +114,19 @@ struct DlcCatalogHeader {
 struct DlcCatalogEntry {
     uint32_t idOff;
     uint32_t titleOff;
+};
+
+// ── GameInfo payload ──────────────────────────────────────────────────────────
+// Header: PktType::GameInfo
+// Payload: GameInfoPkt
+// Sent once after EOS_Platform_Create fires (which gives us SandboxId/ProductId).
+// The GUI uses the sandbox ID to call external APIs (egdata, Epic GraphQL)
+// for game name (A2) and achievement rarity (G4).
+
+struct GameInfoPkt {
+    char sandboxId[64];     // EOS_Platform_Options::SandboxId (null-term)
+    char productId[64];     // EOS_Platform_Options::ProductId (null-term)
+    char eosVersion[32];    // EOS_GetVersion() result (null-term)
 };
 
 #pragma pack(pop)

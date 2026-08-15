@@ -1,15 +1,12 @@
 /**
  * Shared types — mirror the Rust state.rs structs exactly.
  * These are the data shapes returned by Tauri commands.
- *
- * Note: The Rust `Achievement` doesn't carry a `progress` field (the wire
- * protocol only sends locked/unlocked state). Progress is a UI-layer concept
- * derived from stats. The data hook adapter defaults progress to 0 (locked)
- * or 1 (unlocked) when coming from the pipe; the mockup fallback carries the
- * real parsed progress values.
  */
 
 export type UnlockState = "Locked" | "Unlocked" | "Unlocking";
+
+/** Rarity tier derived from XP value (same as PlayStation/egdata). */
+export type RarityTier = "bronze" | "silver" | "gold" | "platinum" | "unknown";
 
 /** Raw Rust achievement shape (camelCase, matches state.rs serde) */
 export interface RustAchievement {
@@ -20,14 +17,16 @@ export interface RustAchievement {
   state: UnlockState;
   /** UnlockedIconURL from the EOS SDK. null/undefined when the SDK gave no URL. */
   iconUrl?: string | null;
-  /** A3: Player progress 0..1 from EOS_Achievements_PlayerAchievement::Progress.
-   *  0 = no progress, 1 = fully complete. Older DLL builds that don't send
-   *  progress will leave this undefined (treated as 0 by the adapter). */
+  /** A3: Player progress 0..1 from EOS_Achievements_PlayerAchievement::Progress. */
   progress?: number;
-  /** A3: Human-readable stat threshold annotation, e.g. "12/50 kills".
-   *  null/undefined when no stat info available (non-stat-gated achievements
-   *  or older DLL builds). Rendered next to the progress bar. */
+  /** A3: Human-readable stat threshold annotation, e.g. "12/50 kills". */
   statThreshold?: string | null;
+  /** G4: Unlock timestamp as ISO 8601 string (e.g. "2024-03-15T18:30:00Z"). */
+  unlockTime?: string | null;
+  /** G4: Global unlock percentage from external API (egdata or Epic GraphQL). */
+  rarityPercent?: number | null;
+  /** G4: Rarity tier derived from XP (Bronze/Silver/Gold/Platinum). */
+  rarityTier?: RarityTier | null;
 }
 
 /** Raw Rust DLC shape — catalog packet (id + title only) */
@@ -59,13 +58,18 @@ export interface LogTail {
   path: string;
   lines: string[];
   truncated: boolean;
-  /** Real byte size of the log file on disk (not an estimate).
-   *  Drives the "Log size: X KB" display in the statusbar. */
+  /** Real byte size of the log file on disk (not an estimate). */
   fileSize?: number;
 }
 
 export type AchievementFilter = "all" | "locked" | "unlocked" | "hidden";
 
+/** G4/A2: Game info from DLL (sandbox ID, product ID, EOS version). */
+export interface GameInfo {
+  sandboxId: string;
+  productId: string;
+  eosVersion: string;
+}
 
 // G2: Persistent application settings (mirrors Rust settings.rs AppSettings).
 export interface AppSettings {

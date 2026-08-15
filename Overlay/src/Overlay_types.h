@@ -40,6 +40,10 @@ struct Overlay_Achievement{
         // Heap-allocated, owned by Overlay_Achievement (freed in freeAchievementStatThresholds).
         // nullptr if no stat info available (non-stat-gated achievements).
         char* StatThresholdLabel;
+        // G4: Unlock timestamp from EOS_Achievements_PlayerAchievement::UnlockTime.
+        // -1 = not unlocked. Positive = POSIX epoch seconds.
+        // Converted to ISO 8601 string in the pipe protocol blob.
+        int64_t UnlockTime;
 };
 
 typedef std::vector<Overlay_Achievement> Achievements;

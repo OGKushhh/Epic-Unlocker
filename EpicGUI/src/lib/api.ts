@@ -12,6 +12,7 @@ import type {
   ConnectionStatus,
   LogTail,
   AppSettings,
+  GameInfo,
 } from "@/types";
 
 // ── Connection ──────────────────────────────────────────────────────────────
@@ -101,3 +102,13 @@ export const windowMinimize = (): Promise<void> => invoke("window_minimize");
 export const windowToggleMaximize = (): Promise<void> =>
   invoke("window_toggle_maximize");
 export const windowClose = (): Promise<void> => invoke("window_close");
+
+// ── G4/A2: Game Info + Achievement Rarity ────────────────────────────────────
+// GameInfo from DLL (sandbox ID, product ID, EOS version).
+export const getGameInfo = (): Promise<GameInfo> =>
+  invoke("get_game_info");
+
+// Fetch achievement rarity from external APIs (egdata primary, Epic GraphQL fallback).
+// Returns the count of achievements that got rarity data merged in.
+export const fetchAchievementRarity = (): Promise<number> =>
+  invoke("fetch_achievement_rarity");

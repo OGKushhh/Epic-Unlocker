@@ -385,8 +385,38 @@ body {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: background 0.15s;
+  position: relative;
 }
 .ach-row:hover { background: var(--panel-hi); }
+.ach-row { cursor: context-menu; }  /* hint: right-click copies ID */
+
+/* ── Copy flicker: smooth shimmer sweeps left→right on the row ── */
+.ach-row.copy-flicker::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.06) 20%,
+    rgba(255,255,255,0.14) 50%,
+    rgba(255,255,255,0.06) 80%,
+    transparent 100%
+  );
+  pointer-events: none;
+  clip-path: inset(0);
+  animation: copyFlicker 0.7s ease forwards;
+}
+@keyframes copyFlicker {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
+  15%  { opacity: 1; clip-path: inset(0 40% 0 0); }
+  50%  { opacity: 0.7; clip-path: inset(0 0 0 30%); }
+  100% { opacity: 0; clip-path: inset(0 0 0 100%); }
+}
+
 .ach-row.unlocked .ach-icon { filter: none; opacity: 1; border-color: var(--accent); background: rgba(0, 0, 0, 0.05); }
 [data-theme="light"] .ach-row.unlocked .ach-icon { background: rgba(37, 99, 235, 0.08); }
 [data-theme="dark"] .ach-row.unlocked .ach-icon { background: rgba(0, 120, 242, 0.12); }
@@ -404,6 +434,44 @@ body {
   justify-content: center;
   font-size: 18px;
   transition: border-color 0.2s, background 0.2s;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Icon hover preview: sibling element (not child) so parent opacity doesn't dim it ── */
+.icon-preview {
+  position: absolute;
+  left: 62px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 96px;
+  height: 96px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 50;
+  overflow: hidden;
+}
+.icon-preview img {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  border-radius: 6px;
+  image-rendering: auto;
+}
+.icon-preview .preview-emoji {
+  font-size: 56px;
+  line-height: 1;
+}
+.ach-icon:hover + .icon-preview {
+  opacity: 1;
 }
 
 .ach-body { flex: 1; min-width: 0; }
@@ -423,6 +491,11 @@ body {
 .badge.locked   { background: rgba(244,67,54,0.1);  color: var(--red);  border: 1px solid rgba(244,67,54,0.3); }
 .badge.hidden   { background: rgba(136,136,136,0.1); color: var(--text-dim); border: 1px solid var(--border); }
 .badge.stat     { background: rgba(33,150,243,0.1); color: var(--blue); border: 1px solid rgba(33,150,243,0.3); cursor: help; border-bottom: 1px dotted var(--blue); }
+
+/* G4: Rarity badge + unlock time */
+.badge.rarity     { background: rgba(255,255,255,0.05); border: 1px solid; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; }
+.badge.rarity .rarity-pct { margin-left: 4px; opacity: 0.7; font-weight: 400; }
+.badge.unlock-time { background: rgba(136,136,136,0.08); color: var(--text-dim); border: 1px solid var(--border); font-size: 10px; }
 
 .unlock-btn {
   height: 28px; padding: 0 12px;

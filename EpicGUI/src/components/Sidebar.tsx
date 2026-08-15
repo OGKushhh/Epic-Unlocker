@@ -35,6 +35,7 @@ interface SidebarProps {
   onUnlockAllClick: () => void;
   onRefreshClick: () => void;
   onFetchIconsClick: () => void;
+  onFetchRarityClick: () => void;
 }
 
 export default function Sidebar({
@@ -47,6 +48,7 @@ export default function Sidebar({
   onUnlockAllClick,
   onRefreshClick,
   onFetchIconsClick,
+  onFetchRarityClick,
 }: SidebarProps) {
   // Pick a random game emoji ONCE per app session (lazy initial state).
   // Re-renders reuse the same value — only a full app restart picks a new one.
@@ -122,6 +124,9 @@ export default function Sidebar({
         </button>
         <button className="action-btn" onClick={onFetchIconsClick}>
           🖼️ Fetch Icons
+        </button>
+        <button className="action-btn" onClick={onFetchRarityClick}>
+          🏆 Fetch Rarity
         </button>
       </div>
 

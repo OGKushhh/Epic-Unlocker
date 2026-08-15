@@ -2,26 +2,6 @@
 // Named-pipe client that connects to \\.\pipe\EpicGUI (the ScreamAPI DLL is the server).
 // On Windows: uses raw std::os::windows::io + CreateFileW via the windows-sys crate-free path.
 // On non-Windows: stubbed out (returns Disconnected) so the frontend can still build/dev.
-//
-// Lifecycle:
-//   1. ScreamAPI DLL (injected into the Epic game) creates the pipe server.
-//   2. EpicGUI (this Rust binary) connects as a client.
-//   3. DLL pushes AchList, DlcCatalog, LogPath; then async AchUpdate packets.
-//   4. GUI sends CmdUnlock / CmdUnlockAll / CmdRefresh on demand.
-//
-// We run a background reader task that:
-//   - Reads PktHeader + payload
-//   - Updates the shared AppState
-//   - Emits Tauri events to the frontend (achievement_update, log_path, etc.)
-//
-// IMPORTANT (sharing model):
-//   The connected `PipeClient` is stored in `Arc<RwLock<Option<Arc<PipeClient>>>>`
-//   (managed by Tauri as `pipe_client_state`). The reader loop holds an `Arc<PipeClient>`
-//   clone for `read_packet(&self)`, and command handlers grab an `Arc<PipeClient>` clone
-//   for `send_command(&self)`. Both methods take `&self`, so a single `Arc<PipeClient>`
-//   can serve both the reader and any number of concurrent senders.
-//   Win32 named pipes allow concurrent ReadFile + WriteFile on the same handle (the
-//   kernel serializes access), and we enforce single-reader at the application level.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,10 +10,6 @@ use tokio::sync::RwLock;
 use crate::state::AppState;
 use crate::pipe_protocol::*;
 
-// `windows_impl` and `stub_impl` are declared at the crate root in lib.rs
-// (because they live at src/windows_impl.rs and src/stub_impl.rs as siblings
-// of pipe_client.rs, not in a `pipe_client/` subdirectory).
-// We re-export the platform-specific PipeClient from there.
 #[cfg(target_os = "windows")]
 pub use crate::windows_impl::PipeClient;
 
@@ -41,30 +17,14 @@ pub use crate::windows_impl::PipeClient;
 pub use crate::stub_impl::PipeClient;
 
 /// Shared, mutable slot holding the currently-connected pipe client (or None).
-///
-/// - The reader loop writes `Some(Arc<PipeClient>)` on connect and `None` on disconnect.
-/// - Command handlers read the slot, clone the `Arc`, drop the guard, then call
-///   `send_command` on their owned `Arc<PipeClient>`. This avoids holding the
-///   RwLock guard across the `send_command().await`.
 pub type PipeClientState = Arc<RwLock<Option<Arc<PipeClient>>>>;
 
-/// Spawns the pipe client loop. It retries connection every 1s until the DLL
-/// is reachable, then streams packets into the shared AppState and emits events.
-///
-/// On each successful connect, the new `Arc<PipeClient>` is stored into
-/// `pipe_client_state` so Tauri command handlers can dispatch commands through it.
-/// On disconnect, the slot is cleared to `None`.
+/// Spawns the pipe client loop.
 pub fn spawn_pipe_loop(
     app: tauri::AppHandle,
     state: Arc<RwLock<AppState>>,
     pipe_client_state: PipeClientState,
 ) {
-    // IMPORTANT: use `tauri::async_runtime::spawn`, NOT `tokio::spawn`.
-    // Tauri's `setup` hook runs on the main thread BEFORE the Tokio runtime
-    // is set as the current thread's context. `tokio::spawn` requires a
-    // current-thread runtime context and panics with "there is no reactor
-    // running" if called from setup. `tauri::async_runtime::spawn` correctly
-    // enters the runtime context regardless of caller thread.
     tauri::async_runtime::spawn(async move {
         loop {
             match PipeClient::connect().await {
@@ -86,13 +46,6 @@ pub fn spawn_pipe_loop(
                         true,
                     );
 
-                    // Reader loop — uses peek-polling instead of blocking ReadFile.
-                    // This is CRITICAL: in non-overlapped mode, a blocking ReadFile
-                    // would hold the handle's I/O slot and prevent WriteFile (from
-                    // send_command/CmdUnlock) from completing. By polling with
-                    // try_read_packet (which peeks first and only reads when data
-                    // is available), the handle stays free for writes between
-                    // incoming packets.
                     loop {
                         match client.try_read_packet().await {
                             Ok(Some(pkt)) => {
@@ -105,10 +58,6 @@ pub fn spawn_pipe_loop(
                                 }
                             }
                             Ok(None) => {
-                                // No data available yet — sleep briefly and retry.
-                                // 50ms gives ~20 polls/sec, which is fast enough
-                                // for AchUpdate packets (sub-100ms latency) while
-                                // keeping CPU usage negligible.
                                 tokio::time::sleep(Duration::from_millis(50)).await;
                             }
                             Err(e) => {
@@ -127,8 +76,6 @@ pub fn spawn_pipe_loop(
                     }
                     {
                         let mut pc = pipe_client_state.write().await;
-                        // Only clear if the slot still points to OUR client.
-                        // (A reconnect may have already swapped in a new one.)
                         if let Some(current) = pc.as_ref() {
                             if Arc::ptr_eq(current, &client) {
                                 *pc = None;
@@ -182,21 +129,22 @@ async fn handle_packet(
                 let id = read_string(blob, entry.id_off).unwrap_or_default();
                 let name = read_string(blob, entry.name_off).unwrap_or_default();
                 let description = read_string(blob, entry.desc_off).unwrap_or_default();
-                // icon_url_off == 0 is the explicit "no URL" sentinel (the blob
-                // starts with a NUL byte precisely so offset 0 can never be a
-                // real string). Any other offset reads the URL string.
                 let icon_url = if entry.icon_url_off == 0 {
                     None
                 } else {
                     read_string(blob, entry.icon_url_off).filter(|s| !s.is_empty())
                 };
-                // A3: parse progress (u16 fixed-point 0..1000 -> 0..1 float)
-                // and stat_threshold label (offset 0 = None).
                 let progress = entry.progress as f32 / 1000.0;
                 let stat_threshold = if entry.stat_threshold_off == 0 {
                     None
                 } else {
                     read_string(blob, entry.stat_threshold_off).filter(|s| !s.is_empty())
+                };
+                // G4: Parse unlock timestamp from blob (ISO 8601 string)
+                let unlock_time = if entry.unlock_time_off == 0 {
+                    None
+                } else {
+                    read_string(blob, entry.unlock_time_off).filter(|s| !s.is_empty())
                 };
                 let wire_state = WireUnlockState::from_u8(entry.state)
                     .unwrap_or(WireUnlockState::Locked);
@@ -209,9 +157,11 @@ async fn handle_packet(
                     icon_url,
                     progress,
                     stat_threshold,
+                    unlock_time,
+                    rarity_percent: None,    // filled later by fetch_achievement_rarity
+                    rarity_tier: None,       // filled later by fetch_achievement_rarity
                 });
             }
-            // Drop the write lock BEFORE logging/emitting to minimize contention.
             {
                 let mut s = state.write().await;
                 s.achievements = achievements.clone();
@@ -245,10 +195,6 @@ async fn handle_packet(
             {
                 let mut s = state.write().await;
                 s.log_path = Some(path.clone());
-                // Reset incremental-log state — matches C++ behavior on
-                // LogPath packet (g_logFilePos=0, g_dlcItems.clear(),
-                // g_logLines.clear(), g_entitlementCount=-1).
-                // This is the ONLY place dlc_stats should be cleared.
                 s.log_file_pos = 0;
                 s.dlc_stats.clear();
                 s.entitlement_count = -1;
@@ -282,6 +228,25 @@ async fn handle_packet(
             }
             log::info!("DlcCatalog: {} entries", dlc.len());
             let _ = tauri::Emitter::emit(app, "dlc-catalog", dlc);
+        }
+        PktType::GameInfo => {
+            let gi = GameInfoPkt::read_from(&pkt.payload)?;
+            let sandbox_id = gi.sandbox_id_str();
+            let product_id = gi.product_id_str();
+            let eos_version = gi.eos_version_str();
+            {
+                let mut s = state.write().await;
+                s.game_info.sandbox_id = sandbox_id.clone();
+                s.game_info.product_id = product_id.clone();
+                s.game_info.eos_version = eos_version.clone();
+            }
+            log::info!("GameInfo: sandboxId={}, productId={}, eosVersion={}",
+                       sandbox_id, product_id, eos_version);
+            let _ = tauri::Emitter::emit(app, "game-info", serde_json::json!({
+                "sandboxId": sandbox_id,
+                "productId": product_id,
+                "eosVersion": eos_version
+            }));
         }
         // These are GUI→DLL commands; we should never receive them inbound.
         PktType::CmdUnlock | PktType::CmdUnlockAll | PktType::CmdRefresh => {

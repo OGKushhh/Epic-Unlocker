@@ -322,6 +322,10 @@ EOS_HPlatform EOS_CALL Platform_Create(const EOS_Platform_Options* Options) {
             Util::g_namespace_id = Options->SandboxId;
             Logger::info("[HOOK]   Captured namespace_id: %s", Options->SandboxId);
         }
+        if (Options->ProductId && Options->ProductId[0] != '\0') {
+            Util::g_product_id = Options->ProductId;
+            Logger::info("[HOOK]   Captured product_id: %s", Options->ProductId);
+        }
         if (Config::ForceEpicOverlay()) {
             auto mOptions = const_cast<EOS_Platform_Options*>(Options);
             mOptions->Flags = 0;

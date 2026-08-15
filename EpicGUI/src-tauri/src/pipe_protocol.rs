@@ -21,6 +21,7 @@ pub enum PktType {
     AchUpdate = 0x02,
     LogPath = 0x03,
     DlcCatalog = 0x04,
+    GameInfo = 0x05,
     // GUI → DLL
     CmdUnlock = 0x10,
     CmdUnlockAll = 0x11,
@@ -34,6 +35,7 @@ impl PktType {
             0x02 => Some(PktType::AchUpdate),
             0x03 => Some(PktType::LogPath),
             0x04 => Some(PktType::DlcCatalog),
+            0x05 => Some(PktType::GameInfo),
             0x10 => Some(PktType::CmdUnlock),
             0x11 => Some(PktType::CmdUnlockAll),
             0x12 => Some(PktType::CmdRefresh),
@@ -84,17 +86,6 @@ pub struct PktHeader {
 impl PktHeader {
     pub const SIZE: usize = std::mem::size_of::<Self>();
 
-    /// Parses a 9-byte packet header from `buf`.
-    ///
-    /// IMPORTANT: this only parses the header bytes — it does NOT validate that
-    /// the payload is present in `buf`. The caller is responsible for reading
-    /// `payload_size` bytes separately after the header (this is how named-pipe
-    /// reads work: we read the 9-byte header first to learn the payload size,
-    /// then issue a second read for the payload).
-    ///
-    /// The returned `&[u8]` slice is the portion of `buf` AFTER the header
-    /// (possibly empty if `buf.len() == SIZE`). It is provided for callers that
-    /// happen to have header+payload in one buffer; `read_packet` ignores it.
     pub fn read_from(buf: &[u8]) -> Result<(Self, &[u8]), ProtocolError> {
         if buf.len() < Self::SIZE {
             return Err(ProtocolError::HeaderTooShort {
@@ -112,10 +103,6 @@ impl PktHeader {
         if payload_size > EPIC_MAX_PAYLOAD {
             return Err(ProtocolError::PayloadTooLarge { size: payload_size });
         }
-        // Return whatever bytes follow the header. Callers that only passed a
-        // 9-byte header buffer will get an empty slice here, which is fine —
-        // they read the payload separately. Callers that passed header+payload
-        // in one buffer get the payload slice for convenience.
         let rest = &buf[Self::SIZE..];
         Ok((
             PktHeader {
@@ -164,18 +151,17 @@ pub struct AchEntry {
     pub id_off: u32,
     pub name_off: u32,
     pub desc_off: u32,
-    /// Offset of the UnlockedIconURL string in the blob. 0 means no URL
-    /// (older DLL builds that don't send icon URLs will zero this field).
+    /// Offset of the UnlockedIconURL string in the blob. 0 means no URL.
     pub icon_url_off: u32,
     pub is_hidden: u8,
     pub state: u8,
     /// A3: player progress as fixed-point 0..1000 (0 = 0%, 1000 = 100%).
-    /// Divide by 1000.0 to recover the 0..1 float. Older DLL builds that
-    /// don't send progress will zero this field (which correctly reads as 0%).
     pub progress: u16,
     /// A3: offset of the StatThresholdLabel string in the blob (0 = no label).
-    /// e.g. "12/50 kills" — rendered next to the progress bar in the GUI.
     pub stat_threshold_off: u32,
+    /// G4: offset of the UnlockTimestamp string in the blob (0 = no timestamp).
+    /// ISO 8601 format (e.g. "2024-03-15T18:30:00Z").
+    pub unlock_time_off: u32,
 }
 
 impl AchEntry {
@@ -195,9 +181,9 @@ impl AchEntry {
             icon_url_off: u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
             is_hidden: buf[16],
             state: buf[17],
-            // A3: progress (u16 LE) + stat_threshold_off (u32 LE)
             progress: u16::from_le_bytes([buf[18], buf[19]]),
             stat_threshold_off: u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]),
+            unlock_time_off: u32::from_le_bytes([buf[24], buf[25], buf[26], buf[27]]),
         })
     }
 }
@@ -337,6 +323,55 @@ impl DlcCatalogEntry {
             id_off: u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]),
             title_off: u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]),
         })
+    }
+}
+
+// ── GameInfo payload (G4/A2) ────────────────────────────────────────────────
+
+pub const GAME_INFO_SANDBOX_MAX: usize = 64;
+pub const GAME_INFO_PRODUCT_MAX: usize = 64;
+pub const GAME_INFO_VERSION_MAX: usize = 32;
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct GameInfoPkt {
+    pub sandbox_id: [u8; GAME_INFO_SANDBOX_MAX],
+    pub product_id: [u8; GAME_INFO_PRODUCT_MAX],
+    pub eos_version: [u8; GAME_INFO_VERSION_MAX],
+}
+
+impl GameInfoPkt {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+
+    pub fn read_from(buf: &[u8]) -> Result<Self, ProtocolError> {
+        if buf.len() < Self::SIZE {
+            return Err(ProtocolError::PayloadTooShort {
+                got: buf.len(),
+                want: Self::SIZE,
+            });
+        }
+        let mut sandbox_id = [0u8; GAME_INFO_SANDBOX_MAX];
+        sandbox_id.copy_from_slice(&buf[..GAME_INFO_SANDBOX_MAX]);
+        let mut product_id = [0u8; GAME_INFO_PRODUCT_MAX];
+        product_id.copy_from_slice(&buf[GAME_INFO_SANDBOX_MAX..GAME_INFO_SANDBOX_MAX + GAME_INFO_PRODUCT_MAX]);
+        let mut eos_version = [0u8; GAME_INFO_VERSION_MAX];
+        eos_version.copy_from_slice(&buf[GAME_INFO_SANDBOX_MAX + GAME_INFO_PRODUCT_MAX..Self::SIZE]);
+        Ok(GameInfoPkt { sandbox_id, product_id, eos_version })
+    }
+
+    pub fn sandbox_id_str(&self) -> String {
+        let nul = self.sandbox_id.iter().position(|&b| b == 0).unwrap_or(GAME_INFO_SANDBOX_MAX);
+        String::from_utf8_lossy(&self.sandbox_id[..nul]).into_owned()
+    }
+
+    pub fn product_id_str(&self) -> String {
+        let nul = self.product_id.iter().position(|&b| b == 0).unwrap_or(GAME_INFO_PRODUCT_MAX);
+        String::from_utf8_lossy(&self.product_id[..nul]).into_owned()
+    }
+
+    pub fn eos_version_str(&self) -> String {
+        let nul = self.eos_version.iter().position(|&b| b == 0).unwrap_or(GAME_INFO_VERSION_MAX);
+        String::from_utf8_lossy(&self.eos_version[..nul]).into_owned()
     }
 }
 

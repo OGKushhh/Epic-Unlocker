@@ -421,10 +421,15 @@ void EOS_CALL queryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlay
             }
         }
 
-        if (OutAchievement->UnlockTime != -1) {
-            findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel](Overlay_Achievement& achievement) {
+        // G4: Capture the actual UnlockTime value (POSIX epoch seconds, -1 = not unlocked).
+        // Previously we only used this as a boolean (unlocked vs locked).
+        int64_t capturedUnlockTime = OutAchievement->UnlockTime;
+
+        if (capturedUnlockTime != -1) {
+            findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel, capturedUnlockTime](Overlay_Achievement& achievement) {
                 achievement.UnlockState = UnlockState::Unlocked;
                 achievement.Progress = 1.0f;
+                achievement.UnlockTime = capturedUnlockTime;  // G4: store the real timestamp
                 delete[] achievement.StatThresholdLabel;
                 if (thresholdLabel.empty()) {
                     achievement.StatThresholdLabel = nullptr;
@@ -439,6 +444,7 @@ void EOS_CALL queryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlay
             // can render a partial progress bar.
             findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel](Overlay_Achievement& achievement) {
                 achievement.Progress = capturedProgress;
+                achievement.UnlockTime = -1;  // G4: explicit not-unlocked
                 delete[] achievement.StatThresholdLabel;
                 if (thresholdLabel.empty()) {
                     achievement.StatThresholdLabel = nullptr;
@@ -538,7 +544,10 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
                         copy_c_string(OutDefinition->UnlockedIconURL),
                         nullptr,
                         statThresholdsCount,
-                        statThresholds
+                        statThresholds,
+                        0.0f,       // Progress (filled later by player query)
+                        nullptr,    // StatThresholdLabel (filled later)
+                        -1          // UnlockTime (G4: -1 = not unlocked)
                     }
                 );
 
@@ -582,7 +591,10 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
                 copy_c_string(OutDefinition->UnlockedIconId),
                 nullptr,
                 statThresholdsCount,
-                statThresholds
+                statThresholds,
+                0.0f,       // Progress (filled later by player query)
+                nullptr,    // StatThresholdLabel (filled later)
+                -1          // UnlockTime (G4: -1 = not unlocked)
             }
         );
 

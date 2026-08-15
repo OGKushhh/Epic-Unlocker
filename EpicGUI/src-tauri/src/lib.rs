@@ -5,6 +5,7 @@ mod commands;
 mod dlc_log_parser;
 mod pipe_client;
 mod pipe_protocol;
+mod rarity;
 mod settings;
 mod state;
 #[cfg(target_os = "windows")]
@@ -16,6 +17,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use state::AppState;
+use rarity::RarityCache;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,12 +27,10 @@ pub fn run() {
 
     let state = Arc::new(RwLock::new(AppState::default()));
     // Shared slot for the currently-connected pipe client.
-    // - The reader loop (spawn_pipe_loop) writes Some(Arc<PipeClient>) on connect
-    //   and None on disconnect.
-    // - Command handlers read this slot, clone the Arc, drop the guard, then call
-    //   send_command on their owned Arc<PipeClient>.
     let pipe_client_state: pipe_client::PipeClientState =
         Arc::new(RwLock::new(None));
+    // G4: Rarity data cache (by sandbox_id), persists for the session.
+    let rarity_cache = Arc::new(RwLock::new(RarityCache::default()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -39,6 +39,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .manage(state.clone())
         .manage(pipe_client_state.clone())
+        .manage(rarity_cache.clone())
         .setup({
             let state = state.clone();
             let pipe_client_state = pipe_client_state.clone();
@@ -76,6 +77,9 @@ pub fn run() {
             commands::window_minimize,
             commands::window_toggle_maximize,
             commands::window_close,
+            // G4/A2: game info + achievement rarity
+            commands::get_game_info,
+            commands::fetch_achievement_rarity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

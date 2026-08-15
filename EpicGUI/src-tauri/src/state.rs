@@ -5,6 +5,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::rarity::RarityTier;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Achievement {
@@ -15,24 +17,29 @@ pub struct Achievement {
     pub state: String, // "Locked" | "Unlocked" | "Unlocking"
     /// UnlockedIconURL as reported by the EOS SDK. None if the SDK gave us
     /// no URL for this achievement (older DLL builds also leave this None).
-    /// Used by the `fetch_achievement_icons` command to download icons
-    /// independently of the in-game overlay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_url: Option<String>,
     /// A3: Player progress 0..1 from EOS_Achievements_PlayerAchievement::Progress.
-    /// 0 = no progress, 1 = fully complete (will be Unlocked). Older DLL builds
-    /// that don't send progress will leave this at 0.0.
     #[serde(default)]
     pub progress: f32,
     /// A3: Human-readable stat threshold annotation, e.g. "12/50 kills".
-    /// None if no stat info available (non-stat-gated achievements or older
-    /// DLL builds). Rendered next to the progress bar in the GUI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stat_threshold: Option<String>,
+    /// G4: Unlock timestamp as ISO 8601 string (e.g. "2024-03-15T18:30:00Z").
+    /// None if the achievement is not unlocked or the DLL didn't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlock_time: Option<String>,
+    /// G4: Global unlock percentage from external API (egdata or Epic GraphQL).
+    /// None until rarity data is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rarity_percent: Option<f32>,
+    /// G4: Rarity tier derived from XP (Bronze/Silver/Gold/Platinum).
+    /// None until rarity data is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rarity_tier: Option<RarityTier>,
 }
 
 /// DLC entry as sent over the pipe from the DLL (catalog packet).
-/// Contains only id + title from Epic's GraphQL catalog.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DlcEntry {
@@ -40,19 +47,11 @@ pub struct DlcEntry {
     pub title: String,
 }
 
-/// Per-DLC statistics parsed from ScreamAPI.log lines:
-///   - `Item ID: <id>` increments `times_queried`
-///   - `[Owned] <id>` sets `current_owned = true` and increments `times_owned`
-///   - `[Not Owned] <id>` sets `current_owned = false`
-///
-/// These are populated by `dlc_log_parser::parse_dlc_line` and merged with
-/// the DlcCatalog packet's titles when the frontend requests DLC data.
+/// Per-DLC statistics parsed from ScreamAPI.log lines.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DlcStat {
     pub id: String,
-    /// Title extracted from the log line as a fallback when the catalog
-    /// packet hasn't arrived yet (or doesn't include this DLC).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub times_queried: u32,
@@ -73,6 +72,18 @@ pub struct ConnectionStatus {
     pub game_name: String,
 }
 
+/// Game info received from the DLL via GameInfo packet (0x05).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInfo {
+    /// EOS sandbox/namespace ID — used to call external APIs for game name + rarity.
+    pub sandbox_id: String,
+    /// EOS product ID.
+    pub product_id: String,
+    /// EOS SDK version string from EOS_GetVersion().
+    pub eos_version: String,
+}
+
 #[derive(Debug, Default)]
 pub struct AppState {
     pub connected: bool,
@@ -84,20 +95,15 @@ pub struct AppState {
     /// game-info packet (future protocol extension). Defaults to "Epic Game".
     pub game_name: String,
     /// Per-DLC stats parsed from ScreamAPI.log. Keyed by DLC id.
-    /// Populated by `dlc_log_parser` as `get_log_tail` reads new log lines.
     pub dlc_stats: HashMap<String, DlcStat>,
     /// Last-seen `GetEntitlementsCount: N` value from the log. -1 = unknown.
     pub entitlement_count: i32,
     /// Byte offset of the last-read position in ScreamAPI.log.
-    /// Ports the C++ `g_logFilePos` behavior: only new bytes are read on
-    /// each poll, and dlc_stats are updated incrementally (no clear).
-    /// Reset to 0 when a new LogPath packet arrives (new game connecting).
     pub log_file_pos: u64,
     /// Rolling in-memory buffer of log lines for display in the Log tab.
-    /// Capped at LOG_MAX_LINES (20000); oldest lines dropped.
-    /// This replaces the previous "read last 2MB every poll" behavior —
-    /// now we read incrementally and keep what we've seen.
     pub log_lines: Vec<String>,
+    /// G4/A2: Game info from DLL (sandbox ID, product ID, EOS version).
+    pub game_info: GameInfo,
 }
 
 pub(crate) const LOG_MAX_LINES: usize = 20000;

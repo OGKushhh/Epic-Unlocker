@@ -10,6 +10,8 @@
 #include "Overlay_types.h"
 #include "Overlay.h"
 #include "eos_hooks.h"
+#include "util.h"
+#include "eos_compat.h"
 
 #include <thread>
 #include <atomic>
@@ -111,6 +113,18 @@ static void SendAchList(HANDLE pipe) {
         e.progress = (uint16_t)(p * 1000.0f + 0.5f);
         const char* label = a.StatThresholdLabel;
         e.statThresholdOff = (label && label[0] != '\0') ? addStr(label) : 0;
+        // G4: Convert UnlockTime (int64_t POSIX epoch) to ISO 8601 string.
+        // -1 = not unlocked -> offset 0 (no timestamp). Otherwise format as UTC.
+        if (a.UnlockTime != -1 && a.UnlockTime > 0) {
+            time_t t = (time_t)a.UnlockTime;
+            struct tm utc;
+            gmtime_s(&utc, &t);
+            char timeBuf[32];
+            strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+            e.unlockTimeOff = addStr(timeBuf);
+        } else {
+            e.unlockTimeOff = 0;
+        }
         entries.push_back(e);
     }
 
@@ -132,6 +146,29 @@ static void SendAchList(HANDLE pipe) {
 
     SendPacket(pipe, PktType::AchList, payload.data(), payloadSize);
     Logger::info("[PIPE] Sent %u achievements to GUI", lh.count);
+}
+
+// ── Send game info (sandbox ID + product ID + EOS version) ───────────────────
+// Used by the GUI to call external APIs (egdata, Epic GraphQL) for game name
+// (A2) and achievement rarity (G4).
+static void SendGameInfo(HANDLE pipe) {
+    GameInfoPkt gi{};
+    // Copy SandboxId from Util::g_namespace_id (captured at Platform_Create)
+    if (!Util::g_namespace_id.empty()) {
+        strncpy_s(gi.sandboxId, sizeof(gi.sandboxId), Util::g_namespace_id.c_str(), 63);
+    }
+    // Copy ProductId from Util::g_product_id (captured at Platform_Create)
+    if (!Util::g_product_id.empty()) {
+        strncpy_s(gi.productId, sizeof(gi.productId), Util::g_product_id.c_str(), 63);
+    }
+    // Copy EOS version string from compatibility layer (runtime-detected SDK version)
+    const char* ver = EOS_Compat::getVersionString();
+    if (ver && ver[0] != '\0') {
+        strncpy_s(gi.eosVersion, sizeof(gi.eosVersion), ver, 31);
+    }
+    SendPacket(pipe, PktType::GameInfo, &gi, sizeof(gi));
+    Logger::info("[PIPE] Sent GameInfo: sandboxId=%s, productId=%s, eosVersion=%s",
+                 gi.sandboxId, gi.productId, gi.eosVersion);
 }
 
 // ── Send DLC catalog (id→title map) to newly connected client ─────────────────
@@ -180,6 +217,7 @@ static void HandleClient(HANDLE pipe) {
     }
     SendAchList(pipe);
     SendDlcCatalog(pipe);  // send catalog titles after achievement list
+    SendGameInfo(pipe);    // send sandbox/product ID for external API calls (A2, G4)
 
     Logger::info("[PIPE] HandleClient: entering command read loop, waiting for GUI commands...");
     while (s_running) {

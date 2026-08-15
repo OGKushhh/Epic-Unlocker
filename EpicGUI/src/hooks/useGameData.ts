@@ -37,6 +37,7 @@ import {
   unlockAllAchievements,
   refreshAchievements,
   fetchAchievementIcons,
+  fetchAchievementRarity,
   type IconFetchResult,
 } from "../lib/api";
 import type {
@@ -45,6 +46,7 @@ import type {
   RustDlcWithStats,
   ConnectionStatus,
   LogTail,
+  GameInfo as RustGameInfo,
 } from "../types";
 import {
   achievementData as mockupAchievements,
@@ -92,6 +94,10 @@ function adaptAchievement(r: RustAchievement): Achievement {
     // for the GUI to render next to the progress bar. Undefined when
     // the DLL didn't send one (older builds or non-stat-gated achievements).
     statThreshold: r.statThreshold ?? undefined,
+    // G4: Pass through unlock timestamp (ISO 8601) and rarity data.
+    unlockTime: r.unlockTime ?? undefined,
+    rarityPercent: r.rarityPercent ?? undefined,
+    rarityTier: r.rarityTier ?? undefined,
   };
 }
 
@@ -133,6 +139,13 @@ export interface GameDataState {
    * local achievements state so rows immediately render the new icons.
    */
   fetchIcons: (force?: boolean) => Promise<IconFetchResult[]>;
+  /**
+   * Fetch achievement rarity from egdata/Epic GraphQL and merge into achievements.
+   * Returns the count of achievements that got rarity data.
+   */
+  fetchRarity: () => Promise<number>;
+  /** Game info from DLL (sandbox ID, product ID, EOS version). */
+  gameInfo: RustGameInfo | null;
 }
 
 export function useGameData(): GameDataState {
@@ -151,6 +164,7 @@ export function useGameData(): GameDataState {
   const [logFileSize, setLogFileSize] = useState<number | undefined>(undefined);
   const [connection, setConnection] = useState<ConnectionStatus | null>(null);
   const [loading, setLoading] = useState(inTauri);
+  const [gameInfo, setGameInfo] = useState<RustGameInfo | null>(null);
 
   // ── Browser dev mode: load mockup once, no commands, no events ───────────
   useEffect(() => {
@@ -368,6 +382,32 @@ export function useGameData(): GameDataState {
               .then((tail) => setLogLines(tail.lines.map(adaptLogLine)))
               .catch(() => {});
           }),
+          // G4: Auto-fetch rarity when GameInfo arrives from the DLL
+          listen<RustGameInfo>("game-info", (event) => {
+            setGameInfo(event.payload);
+            // Auto-fetch rarity in the background when we get a sandbox ID
+            if (event.payload.sandboxId) {
+              fetchAchievementRarity()
+                .then((count) => {
+                  console.log(`[G4] Auto-fetched rarity for ${count} achievements`);
+                  // Re-fetch achievements to get the merged rarity data
+                  getAchievements().then((raw) => {
+                    setAchievements((prev) => {
+                      const prevById = new Map(prev.map((a) => [a.id, a]));
+                      return raw.map((r) => {
+                        const adapted = adaptAchievement(r);
+                        const old = prevById.get(adapted.id);
+                        if (old?.iconPath) {
+                          return { ...adapted, iconPath: old.iconPath };
+                        }
+                        return adapted;
+                      });
+                    });
+                  });
+                })
+                .catch((e) => console.warn("[G4] Auto-fetch rarity failed:", e));
+            }
+          }),
         ]);
         unlistenFns = unsubs.map((u) => u);
       } catch (e) {
@@ -480,6 +520,33 @@ export function useGameData(): GameDataState {
     [inTauri]
   );
 
+  const fetchRarity = useCallback(
+    async (): Promise<number> => {
+      if (!inTauri) return 0;
+      try {
+        const count = await fetchAchievementRarity();
+        // Re-fetch achievements to pick up the merged rarity data
+        const raw: RustAchievement[] = await getAchievements();
+        setAchievements((prev) => {
+          const prevById = new Map(prev.map((a) => [a.id, a]));
+          return raw.map((r) => {
+            const adapted = adaptAchievement(r);
+            const old = prevById.get(adapted.id);
+            if (old?.iconPath) {
+              return { ...adapted, iconPath: old.iconPath };
+            }
+            return adapted;
+          });
+        });
+        return count;
+      } catch (e) {
+        console.error("fetch_achievement_rarity failed:", e);
+        return 0;
+      }
+    },
+    [inTauri]
+  );
+
   return {
     achievements,
     dlc,
@@ -494,5 +561,7 @@ export function useGameData(): GameDataState {
     unlockOne,
     unlockAll,
     fetchIcons,
+    fetchRarity,
+    gameInfo,
   };
 }

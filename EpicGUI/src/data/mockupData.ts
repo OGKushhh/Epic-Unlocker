@@ -4,6 +4,8 @@
  * so we treat it as the canonical starting dataset for the carbon copy.
  */
 
+export type RarityTier = "bronze" | "silver" | "gold" | "platinum" | "unknown";
+
 export interface Achievement {
   id: string;
   title: string;
@@ -23,6 +25,12 @@ export interface Achievement {
    * Undefined when no stat info available. Rendered next to the progress bar.
    */
   statThreshold?: string;
+  /** G4: Unlock timestamp as ISO 8601 string (e.g. "2024-03-15T18:30:00Z"). */
+  unlockTime?: string;
+  /** G4: Global unlock percentage from external API (egdata or Epic GraphQL). */
+  rarityPercent?: number;
+  /** G4: Rarity tier derived from XP (Bronze/Silver/Gold/Platinum). */
+  rarityTier?: RarityTier;
 }
 
 export interface DlcEntry {

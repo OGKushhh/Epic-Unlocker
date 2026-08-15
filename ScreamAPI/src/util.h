@@ -15,6 +15,7 @@ std::filesystem::path getDLLparentDir(HMODULE hModule);
 // Captured from EOS_Platform_Create -> Options->SandboxId.
 // Used by DLC catalog auto-fetch. Empty until EOS_Platform_Create fires.
 extern std::string g_namespace_id;
+extern std::string g_product_id;
 
 extern EOS_HPlatform hPlatform;
 EOS_HPlatform getHPlatform();

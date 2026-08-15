@@ -5,8 +5,7 @@
  *   - Appearance (theme select)
  *   - Behavior (auto-refresh, connect on launch)   [G2: persisted to backend]
  *   - Hotkeys (read-only display of active hotkeys)
- *   - Logging (max log lines display)              [G2: persisted to backend]
- *   - SDK Log (A1: path + Open button for ScreamAPI_SDK.log)
+ *   - Logging (max log lines + ScreamAPI.log + EOS SDK log — unified)
  *
  * G2: All settings persist to a JSON file in the app's local data dir via
  * the get_settings / save_settings Tauri commands. The theme select was
@@ -191,7 +190,7 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
         </div>
 
-        {/* Logging */}
+        {/* Logging (unified: ScreamAPI.log + SDK log) */}
         <div className="settings-group">
           <div className="group-title">📁 Logging</div>
           <div className="setting-row">
@@ -219,9 +218,9 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">ScreamAPI log</div>
+              <div className="label">ScreamAPI.log</div>
               <div className="desc">
-                Open ScreamAPI.log (the curated unlock-debugging log) externally
+                Curated unlock-debugging log with hook events, achievement state, and pipe messages
               </div>
             </div>
             <div className="control">
@@ -231,22 +230,17 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
                   alert(`Failed to open log: ${e}`)
                 )}
               >
-                Open ScreamAPI.log
+                Open
               </button>
             </div>
           </div>
-        </div>
-
-        {/* SDK Log (A1) */}
-        <div className="settings-group">
-          <div className="group-title">🔧 SDK Log (verbose)</div>
           <div className="setting-row">
             <div>
-              <div className="label">EOS SDK log file</div>
+              <div className="label">EOS SDK log</div>
               <div className="desc">
                 {sdkLogPath
-                  ? "Verbose EOS SDK backend trace. Separate from ScreamAPI.log to avoid noise."
-                  : "Not available until a game connects (launch a game with Epic Unlocker)."}
+                  ? "Verbose EOS SDK backend trace (separate from ScreamAPI.log to avoid noise)"
+                  : "Not available until a game connects"}
               </div>
               {sdkLogPath && (
                 <div
@@ -273,7 +267,7 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
                   )
                 }
               >
-                Open SDK log
+                Open
               </button>
             </div>
           </div>
