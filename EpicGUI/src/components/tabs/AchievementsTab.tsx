@@ -518,20 +518,22 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
           <span className="badge unlocked">{t("ach.badgeUnlocked", locale)}</span>
         ) : (
           <>
-            <span
-              className="badge stat"
-              title={t("tooltip.statGatedTitle", locale)}
-              onMouseEnter={(e) => {
-                e.stopPropagation();
-                onHoverStatGated(e);
-              }}
-              onMouseLeave={() => {
-                // Stat-gated tooltip is standalone — always close on leave
-                onHover(null);
-              }}
-            >
-              {t("ach.badgeStatGated", locale)}
-            </span>
+            {ach.statThreshold && (
+              <span
+                className="badge stat"
+                title={t("tooltip.statGatedTitle", locale)}
+                onMouseEnter={(e) => {
+                  e.stopPropagation();
+                  onHoverStatGated(e);
+                }}
+                onMouseLeave={() => {
+                  // Stat-gated tooltip is standalone — always close on leave
+                  onHover(null);
+                }}
+              >
+                {t("ach.badgeStatGated", locale)}
+              </span>
+            )}
             <span className="badge locked">{t("ach.badgeLocked", locale)}</span>
           </>
         )}

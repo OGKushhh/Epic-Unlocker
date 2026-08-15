@@ -66,7 +66,7 @@ export default function Sidebar({
   const total = achievements.length;
   const unlocked = achievements.filter((a) => a.unlocked).length;
   const locked = total - unlocked;
-  const statGated = total;
+  const statGated = achievements.filter((a) => a.statThreshold).length;
   const progress = total > 0 ? Math.round((unlocked / total) * 1000) / 10 : 0;
 
   // Game card meta reflects connection state
