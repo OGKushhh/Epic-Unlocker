@@ -80,6 +80,9 @@ struct AchEntry {
 struct AchUpdatePkt {
     char            id[128];
     WireUnlockState state;
+    // G4: POSIX epoch seconds from EOS_OnAchievementsUnlockedV2Info::UnlockTime.
+    // -1 = not unlocked / no timestamp (older DLLs that don't send this field).
+    int64_t         unlockTime;
 };
 
 // ── CmdUnlock payload ─────────────────────────────────────────────────────────

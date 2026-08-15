@@ -195,6 +195,9 @@ impl AchEntry {
 pub struct AchUpdatePkt {
     pub id: [u8; 128],
     pub state: u8,
+    /// G4: POSIX epoch seconds from EOS_OnAchievementsUnlockedV2Info::UnlockTime.
+    /// -1 = not unlocked / no timestamp (older DLLs that don't send this field).
+    pub unlock_time: i64,
 }
 
 impl AchUpdatePkt {
@@ -209,9 +212,15 @@ impl AchUpdatePkt {
         }
         let mut id = [0u8; 128];
         id.copy_from_slice(&buf[..128]);
+        let state = buf[128];
+        let unlock_time = i64::from_le_bytes([
+            buf[129], buf[130], buf[131], buf[132],
+            buf[133], buf[134], buf[135], buf[136],
+        ]);
         Ok(AchUpdatePkt {
             id,
-            state: buf[128],
+            state,
+            unlock_time,
         })
     }
 

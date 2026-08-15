@@ -221,6 +221,28 @@ static void HandleClient(HANDLE pipe) {
 
     Logger::info("[PIPE] HandleClient: entering command read loop, waiting for GUI commands...");
     while (s_running) {
+        // ── Non-blocking read using PeekNamedPipe ──────────────────────────
+        // Previously, ReadAll(header) blocked here, serializing I/O on the
+        // non-overlapped pipe handle. That prevented SendUpdatedList() from
+        // another thread from completing its WriteFile() — the server's
+        // blocking ReadFile had to finish first (which only happens when the
+        // GUI sends a command). This caused the GUI to miss achievement list
+        // updates until the user manually pressed Refresh.
+        //
+        // PeekNamedPipe checks how many bytes are available without blocking.
+        // If there's not enough for a header, we Sleep(10) and retry — this
+        // yields to other threads so WriteFile from SendUpdatedList can proceed.
+        DWORD available = 0;
+        if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) {
+            // Pipe broken — client disconnected
+            Logger::info("[PIPE] HandleClient: PeekNamedPipe failed (GetLastError=%u) - client disconnected", (unsigned)GetLastError());
+            break;
+        }
+        if (available < sizeof(PktHeader)) {
+            Sleep(10);  // no command pending — yield to allow WriteFile from other threads
+            continue;
+        }
+
         PktHeader hdr{};
         if (!ReadAll(pipe, &hdr, sizeof(hdr))) {
             DWORD err = GetLastError();
@@ -346,13 +368,14 @@ void SendUpdatedList() {
     Logger::info("[PIPE] SendUpdatedList: sent refreshed achievement list to GUI");
 }
 
-void NotifyUnlock(const char* achievementId) {
+void NotifyUnlock(const char* achievementId, int64_t unlockTime) {
     std::lock_guard<std::mutex> lk(s_pipeMtx);
     if (s_pipe == INVALID_HANDLE_VALUE) return;
 
     AchUpdatePkt upd{};
     strncpy_s(upd.id, achievementId, 127);
     upd.state = WireUnlockState::Unlocked;
+    upd.unlockTime = unlockTime;  // G4: pass the real timestamp from EOS
     SendPacket(s_pipe, PktType::AchUpdate,
                &upd, sizeof(upd));
 }

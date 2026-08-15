@@ -316,8 +316,8 @@ export function useGameData(): GameDataState {
               });
             });
           }),
-          listen<{ id: string; state: string }>("achievement-update", (event) => {
-            const { id, state } = event.payload;
+          listen<{ id: string; state: string; unlockTime?: string | null }>("achievement-update", (event) => {
+            const { id, state, unlockTime } = event.payload;
             setAchievements((prev) =>
               prev.map((a) =>
                 a.id === id
@@ -325,6 +325,9 @@ export function useGameData(): GameDataState {
                       ...a,
                       unlocked: state === "Unlocked",
                       progress: state === "Unlocked" ? 1 : a.progress,
+                      // G4: Update unlockTime from the AchUpdate packet.
+                      // The DLL now sends the real EOS-provided timestamp.
+                      unlockTime: unlockTime ?? a.unlockTime,
                     }
                   : a
               )

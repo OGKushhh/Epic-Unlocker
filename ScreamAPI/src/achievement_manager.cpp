@@ -187,18 +187,35 @@ static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnloc
 }
 
 static void EOS_CALL OnAchievementsUnlockedV2(const EOS_Achievements_OnAchievementsUnlockedCallbackV2Info* Data) {
-    findAchievement(Data->AchievementId, [](Overlay_Achievement& achievement) {
+    // G4: Capture the real UnlockTime from the EOS V2 notification.
+    // This is the authoritative timestamp - it comes directly from the server
+    // and reflects when EOS actually recorded the unlock, not when our code ran.
+    int64_t unlockTime = Data->UnlockTime;
+    findAchievement(Data->AchievementId, [unlockTime](Overlay_Achievement& achievement) {
         achievement.UnlockState = UnlockState::Unlocked;
+        achievement.UnlockTime = unlockTime;  // G4: store the server-provided timestamp
     });
-    PipeServer::NotifyUnlock(Data->AchievementId);
+    PipeServer::NotifyUnlock(Data->AchievementId, unlockTime);
 }
 
 static void EOS_CALL OnAchievementsUnlocked(const EOS_Achievements_OnAchievementsUnlockedCallbackInfo* Data) {
+    // V1 notification doesn't carry UnlockTime - look up the achievement's
+    // existing UnlockTime (set by queryPlayerAchievementsComplete or V2).
+    // If still -1 (truly fresh), use current time as best-effort.
     for (uint32_t i = 0; i < Data->AchievementsCount; i++) {
-        findAchievement(Data->AchievementIds[i], [](Overlay_Achievement& achievement) {
+        const char* achId = Data->AchievementIds[i];
+        int64_t unlockTime = -1;
+        findAchievement(achId, [&unlockTime](Overlay_Achievement& achievement) {
             achievement.UnlockState = UnlockState::Unlocked;
+            unlockTime = achievement.UnlockTime;
+            if (unlockTime <= 0) {
+                // V1 has no timestamp - use current time as best-effort.
+                // V2 (if it fires later) will overwrite with the real value.
+                unlockTime = (int64_t)time(nullptr);
+                achievement.UnlockTime = unlockTime;
+            }
         });
-        PipeServer::NotifyUnlock(Data->AchievementIds[i]);
+        PipeServer::NotifyUnlock(achId, unlockTime);
     }
 }
 

@@ -10,6 +10,24 @@ use tokio::sync::RwLock;
 use crate::state::AppState;
 use crate::pipe_protocol::*;
 
+/// Convert days since Unix epoch (1970-01-01) to (year, month, day).
+/// Simplified civil calendar algorithm — no external deps needed.
+fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
+    // Shift from 1970-03-01 baseline (simplifies leap-year math)
+    days += 719468; // days from 0000-03-01 to 1970-01-01
+    let era = days / 146097; // 400-year era
+    let day_of_era = days % 146097;
+    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36524
+        - day_of_era / 146096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month + 2) / 5;
+    let year = era * 400 + year_of_era;
+    let year = if month >= 10 { year + 1 } else { year };
+    let month = if month >= 10 { month - 9 } else { month + 3 };
+    (year, month, day + 1)
+}
+
 #[cfg(target_os = "windows")]
 pub use crate::windows_impl::PipeClient;
 
@@ -176,17 +194,37 @@ async fn handle_packet(
                 .unwrap_or(WireUnlockState::Locked)
                 .as_str()
                 .to_string();
+            // G4: Convert POSIX epoch to ISO 8601 string for the frontend.
+            // -1 or 0 means no timestamp (older DLL or not unlocked).
+            let unlock_time = if upd.unlock_time > 0 {
+                let secs = upd.unlock_time as u64;
+                // Format as UTC ISO 8601 without depending on chrono
+                let days = secs / 86400;
+                let time_of_day = secs % 86400;
+                let hours = time_of_day / 3600;
+                let minutes = (time_of_day % 3600) / 60;
+                let seconds = time_of_day % 60;
+                // Compute year/month/day from days since epoch (simplified UTC calendar)
+                let (year, month, day) = days_to_ymd(days);
+                Some(format!(
+                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                    year, month, day, hours, minutes, seconds
+                ))
+            } else {
+                None
+            };
             {
                 let mut s = state.write().await;
                 if let Some(a) = s.achievements.iter_mut().find(|a| a.id == id) {
                     a.state = new_state.clone();
+                    a.unlock_time = unlock_time.clone();
                 }
             }
-            log::debug!("AchUpdate: {id} -> {new_state}");
+            log::debug!("AchUpdate: {id} -> {new_state} (unlock_time={:?})", unlock_time);
             let _ = tauri::Emitter::emit(
                 app,
                 "achievement-update",
-                serde_json::json!({ "id": id, "state": new_state }),
+                serde_json::json!({ "id": id, "state": new_state, "unlockTime": unlock_time }),
             );
         }
         PktType::LogPath => {
