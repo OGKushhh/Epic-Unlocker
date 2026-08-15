@@ -37,6 +37,10 @@ pub struct Achievement {
     /// None until rarity data is fetched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rarity_tier: Option<RarityTier>,
+    /// G4: XP value from Epic (determines rarity tier).
+    /// None until rarity data is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rarity_xp: Option<i32>,
 }
 
 /// DLC entry as sent over the pipe from the DLL (catalog packet).

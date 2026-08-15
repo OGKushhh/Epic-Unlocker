@@ -25,7 +25,7 @@
  * UI types (id/title/desc/hidden/unlocked/progress).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getConnectionStatus,
   getAchievements,
@@ -99,6 +99,7 @@ function adaptAchievement(r: RustAchievement): Achievement {
     unlockTime: r.unlockTime ?? undefined,
     rarityPercent: r.rarityPercent ?? undefined,
     rarityTier: r.rarityTier ?? undefined,
+    rarityXp: r.rarityXp ?? undefined,
   };
 }
 
@@ -171,6 +172,9 @@ export function useGameData(): GameDataState {
   const [connection, setConnection] = useState<ConnectionStatus | null>(null);
   const [loading, setLoading] = useState(inTauri);
   const [gameInfo, setGameInfo] = useState<RustGameInfo | null>(null);
+  const gameInfoRef = useRef<RustGameInfo | null>(null);
+  // Keep ref in sync so event listeners can read the latest value
+  useEffect(() => { gameInfoRef.current = gameInfo; }, [gameInfo]);
 
   // ── Browser dev mode: load mockup once, no commands, no events ───────────
   useEffect(() => {
@@ -321,6 +325,31 @@ export function useGameData(): GameDataState {
                 return adapted;
               });
             });
+            // Auto-fetch rarity when achievements arrive, if we have a sandbox ID
+            // and achievements don't already have rarity data
+            const hasRarity = event.payload.some((r) => r.rarityTier != null);
+            if (!hasRarity && gameInfoRef.current?.sandboxId) {
+              fetchAchievementRarity()
+                .then((count) => {
+                  if (count > 0) {
+                    console.log(`[G4] Auto-fetched rarity for ${count} achievements on achievements-list`);
+                    getAchievements().then((raw) => {
+                      setAchievements((prev) => {
+                        const prevById = new Map(prev.map((a) => [a.id, a]));
+                        return raw.map((r) => {
+                          const adapted = adaptAchievement(r);
+                          const old = prevById.get(adapted.id);
+                          if (old?.iconPath) {
+                            return { ...adapted, iconPath: old.iconPath };
+                          }
+                          return adapted;
+                        });
+                      });
+                    });
+                  }
+                })
+                .catch((e) => console.warn("[G4] Auto-fetch rarity on achievements-list failed:", e));
+            }
           }),
           listen<{ id: string; state: string; unlockTime?: string | null }>("achievement-update", (event) => {
             const { id, state, unlockTime } = event.payload;

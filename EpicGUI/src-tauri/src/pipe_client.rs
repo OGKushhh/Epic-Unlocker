@@ -178,6 +178,7 @@ async fn handle_packet(
                     unlock_time,
                     rarity_percent: None,    // filled later by fetch_achievement_rarity
                     rarity_tier: None,       // filled later by fetch_achievement_rarity
+                    rarity_xp: None,         // filled later by fetch_achievement_rarity
                 });
             }
             {

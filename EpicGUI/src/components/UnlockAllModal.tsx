@@ -87,7 +87,7 @@ export default function UnlockAllModal({
             </div>
             <p style={{ margin: 0, color: "#6d1a1a", fontSize: "15px" }}>
               {t("modal.dangerBody", locale)}{" "}
-              <strong>Exophase</strong> {t("modal.dangerOr", locale)} <strong>TrueAchievements</strong>.
+              <strong style={{ color: "#b71c1c" }}>Exophase</strong> {t("modal.dangerOr", locale)} <strong style={{ color: "#b71c1c" }}>TrueAchievements</strong>.
               {t("modal.dangerMarked", locale)}{" "}
               {t("modal.dangerBanned", locale)}
             </p>

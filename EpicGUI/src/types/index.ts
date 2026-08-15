@@ -27,6 +27,8 @@ export interface RustAchievement {
   rarityPercent?: number | null;
   /** G4: Rarity tier derived from XP (Bronze/Silver/Gold/Platinum). */
   rarityTier?: RarityTier | null;
+  /** G4: XP value from Epic (determines rarity tier). */
+  rarityXp?: number | null;
 }
 
 /** Raw Rust DLC shape — catalog packet (id + title only) */

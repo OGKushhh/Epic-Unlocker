@@ -31,6 +31,8 @@ export interface Achievement {
   rarityPercent?: number;
   /** G4: Rarity tier derived from XP (Bronze/Silver/Gold/Platinum). */
   rarityTier?: RarityTier;
+  /** G4: XP value from Epic (determines rarity tier). */
+  rarityXp?: number;
 }
 
 export interface DlcEntry {

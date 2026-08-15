@@ -106,7 +106,7 @@ export default function App() {
         y: e.clientY,
       });
     },
-    []
+    [locale]  // re-create when locale changes so tooltip text stays translated
   );
 
   // ── Unlock single achievement ─────────────────────────────────────────────
@@ -117,47 +117,47 @@ export default function App() {
           ? ` (${connection.lastError})`
           : "";
         showToast(
-          "🔌 Not connected",
-          `Launch a game with Epic Unlocker injected first${err}.`
+          `🔌 ${t("toast.notConnected", locale)}`,
+          `${t("toast.notConnectedBody", locale)}${err}`
         );
         return;
       }
-      showToast("Unlocking…", `Queued ${ach.title}`);
+      showToast(t("toast.unlocking", locale), `${t("toast.unlockingBody", locale)} ${ach.title}`);
       const ok = await unlockOne(ach.id);
       if (ok) {
-        showToast("⏳ Queued", `${ach.title} — wait 5–30s for the game to process.`);
+        showToast(`⏳ ${t("toast.queued", locale)}`, `${ach.title} ${t("toast.queuedBody", locale)}`);
       } else {
-        showToast("❌ Failed", `Could not queue ${ach.title}. Check the log for details.`);
+        showToast(`❌ ${t("toast.failed", locale)}`, `${ach.title} — ${t("toast.failedBody", locale)}`);
       }
     },
-    [unlockOne, showToast, connected, connection?.lastError]
+    [unlockOne, showToast, connected, connection?.lastError, locale]
   );
 
   // ── Sidebar action handlers ───────────────────────────────────────────────
   const handleUnlockAllClick = useCallback(() => {
     if (!connected) {
-      showToast("🔌 Not connected", "Launch a game with Epic Unlocker first.");
+      showToast(`🔌 ${t("toast.notConnected", locale)}`, t("toast.notConnectedBody", locale));
       return;
     }
     setModalOpen(true);
-  }, [showToast, connected]);
+  }, [showToast, connected, locale]);
 
   const handleRefreshClick = useCallback(async () => {
     if (!connected) {
-      showToast("🔌 Not connected", "Launch a game with Epic Unlocker first.");
+      showToast(`🔌 ${t("toast.notConnected", locale)}`, t("toast.notConnectedBody", locale));
       return;
     }
-    showToast("🔄 Refreshing…", "Re-syncing from game");
+    showToast(`🔄 ${t("toast.refreshing", locale)}`, t("toast.refreshingBody", locale));
     await refresh();
-    showToast("✅ Refreshed", "Achievement list re-synced.");
-  }, [refresh, showToast, connected]);
+    showToast(`✅ ${t("toast.refreshed", locale)}`, t("toast.refreshedBody", locale));
+  }, [refresh, showToast, connected, locale]);
 
   const handleFetchIconsClick = useCallback(async () => {
     if (!connected) {
-      showToast("🔌 Not connected", "Launch a game with Epic Unlocker first to load achievements to fetch icons for.");
+      showToast(`🔌 ${t("toast.notConnected", locale)}`, t("toast.notConnectedBody", locale));
       return;
     }
-    showToast("*️⃣ Fetching icons…", "Downloading achievement icons to local cache.");
+    showToast(`*️⃣ ${t("toast.fetchIcons", locale)}`, t("toast.fetchIconsBody", locale));
     try {
       const results = await fetchIcons();
       const ok = results.filter((r) => r.status === "ok").length;
@@ -166,80 +166,80 @@ export default function App() {
       const noUrl = results.filter((r) => r.status === "no-url").length;
       if (failed > 0) {
         showToast(
-          `⚠️ Fetched with ${failed} failure${failed === 1 ? "" : "s"}`,
+          `⚠️ ${t("toast.iconsFetchedFail", locale)} (${failed})`,
           `New: ${ok} · Cached: ${skipped} · No URL: ${noUrl} · Failed: ${failed}. See log for details.`
         );
       } else {
         showToast(
-          "✅ Icons fetched",
+          `✅ ${t("toast.iconsFetched", locale)}`,
           `New: ${ok} · Cached: ${skipped} · No URL: ${noUrl}.`
         );
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast("❌ Fetch failed", msg);
+      showToast(`❌ ${t("toast.fetchFailed", locale)}`, msg);
     }
-  }, [fetchIcons, showToast, connected]);
+  }, [fetchIcons, showToast, connected, locale]);
 
   const handleFetchRarityClick = useCallback(async () => {
     if (!connected) {
-      showToast("🔌 Not connected", "Launch a game with Epic Unlocker first to fetch rarity data.");
+      showToast(`🔌 ${t("toast.notConnected", locale)}`, t("toast.notConnectedBody", locale));
       return;
     }
-    showToast("🏆 Fetching rarity…", "Querying egdata + Epic GraphQL for achievement rarity.");
+    showToast(`🏆 ${t("toast.fetchRarity", locale)}`, t("toast.fetchRarityBody", locale));
     try {
       const count = await fetchRarity();
       if (count > 0) {
-        showToast("✅ Rarity fetched", `${count} achievements now have rarity data (Bronze/Silver/Gold/Platinum).`);
+        showToast(`✅ ${t("toast.rarityFetched", locale)}`, `${count} ${t("toast.rarityFetchedBody", locale)}`);
       } else {
-        showToast("⚠️ No rarity data", "No matching achievements found in egdata or Epic GraphQL. The game may not be listed.");
+        showToast(`⚠️ ${t("toast.noRarity", locale)}`, t("toast.noRarityBody", locale));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast("❌ Rarity fetch failed", msg);
+      showToast(`❌ ${t("toast.rarityFetchFailed", locale)}`, msg);
     }
-  }, [fetchRarity, showToast, connected]);
+  }, [fetchRarity, showToast, connected, locale]);
 
   const handleClearCacheClick = useCallback(async () => {
-    showToast("🧹 Clearing icon cache…", "Deleting cached icon files from disk.");
+    showToast(`🧹 ${t("toast.clearingCache", locale)}`, t("toast.clearingCacheBody", locale));
     try {
       const deleted = await clearIconCache();
       if (deleted > 0) {
-        showToast("✅ Cache cleared", `Deleted ${deleted} cached icon${deleted === 1 ? "" : "s"}. Run Fetch Icons to re-download.`);
+        showToast(`✅ ${t("toast.cacheCleared", locale)}`, `Deleted ${deleted} cached icon${deleted === 1 ? "" : "s"}. ${t("toast.cacheClearedBody", locale)}`);
       } else {
-        showToast("✅ Cache cleared", "No cached icons found on disk.");
+        showToast(`✅ ${t("toast.cacheCleared", locale)}`, t("toast.noCachedIcons", locale));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast("❌ Clear failed", msg);
+      showToast(`❌ ${t("toast.clearFailed", locale)}`, msg);
     }
-  }, [clearIconCache, showToast]);
+  }, [clearIconCache, showToast, locale]);
 
   const handleConfirmUnlockAll = useCallback(async () => {
-    showToast("🚀 Unlock All Started", `Queued all ${achievements.length} achievements.`);
+    showToast(`🚀 ${t("toast.unlockAllStarted", locale)}`, `${t("toast.unlockAllBody", locale)} (${achievements.length})`);
     const ok = await unlockAll();
     if (ok) {
-      showToast("⏳ Processing", "Achievements will unlock over 5–30s each as the game processes stats.");
+      showToast(`⏳ ${t("toast.processing", locale)}`, t("toast.processingBody", locale));
     } else {
-      showToast("❌ Failed", "Could not queue unlock-all. Check the log for details.");
+      showToast(`❌ ${t("toast.failed", locale)}`, t("toast.unlockAllFailed", locale));
     }
-  }, [unlockAll, achievements.length, showToast]);
+  }, [unlockAll, achievements.length, showToast, locale]);
 
   // ── Log tab toolbar handlers ──────────────────────────────────────────────
   const handleClearLog = useCallback(async () => {
     try {
       await clearLog();
-      showToast("🧹 Log cleared", "ScreamAPI.log wiped on disk.");
+      showToast(`🧹 ${t("toast.logCleared", locale)}`, t("toast.logClearedBody", locale));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast("❌ Clear failed", msg);
+      showToast(`❌ ${t("toast.clearFailed", locale)}`, msg);
       throw e;
     }
-  }, [showToast]);
+  }, [showToast, locale]);
 
   const handleOpenLogFile = useCallback(async () => {
     if (!logPath) {
-      showToast("🔌 Not connected", "Launch a game first so ScreamAPI reports its log path.");
+      showToast(`🔌 ${t("toast.notConnected", locale)}`, t("toast.notConnectedLogBody", locale));
       throw new Error("No log path");
     }
     try {
@@ -248,10 +248,10 @@ export default function App() {
       // Toasting on every click would be spammy for a frequently-used button.
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast("❌ Could not open log", msg);
+      showToast(`❌ ${t("toast.couldNotOpenLog", locale)}`, msg);
       throw e;
     }
-  }, [logPath, showToast]);
+  }, [logPath, showToast, locale]);
 
   // ── Global hotkey: Ctrl+Shift+U opens the Unlock All modal ────────────────
   useEffect(() => {

@@ -894,6 +894,7 @@ pub async fn fetch_achievement_rarity(
             if let Some(rd) = rarity_by_id.get(&ach.id) {
                 ach.rarity_percent = Some(rd.completed_percent);
                 ach.rarity_tier = Some(rd.tier);
+                ach.rarity_xp = Some(rd.xp);
                 merged_count += 1;
             }
         }
