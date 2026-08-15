@@ -25,7 +25,10 @@
   <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/latest/total?label=downloads%40latest&color=brightgreen" alt="Latest Release Downloads">
 </p>
 <p align="center">
-<a href="https://ko-fi.com/abdobest"><img src="https://img.shields.io/badge/Ko--fi-Support%20Me-red?logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
+  <a href="https://ko-fi.com/abdobest">
+    <img src="https://img.shields.io/badge/Support_Me-Keep_this_project_always_updated-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support">
+  </a>
+</p>
   
 ---
 
