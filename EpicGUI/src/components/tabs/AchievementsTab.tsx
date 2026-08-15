@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Achievement, RarityTier } from "../../data/mockupData";
+import { t, type Locale } from "../../i18n";
 
 // Detect Tauri runtime so we can fall back to emoji in browser dev mode
 declare global {
@@ -28,11 +29,11 @@ const IS_TAURI =
 
 type FilterId = "all" | "locked" | "unlocked" | "hidden";
 
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "locked", label: "Locked" },
-  { id: "unlocked", label: "Unlocked" },
-  { id: "hidden", label: "Hidden" },
+const FILTER_KEYS: { id: FilterId; key: string }[] = [
+  { id: "all", key: "ach.filterAll" },
+  { id: "locked", key: "ach.filterLocked" },
+  { id: "unlocked", key: "ach.filterUnlocked" },
+  { id: "hidden", key: "ach.filterHidden" },
 ];
 
 // -- Rarity tier display -------------------------------------------------------
@@ -45,15 +46,15 @@ const RARITY_COLORS: Record<RarityTier, string> = {
   unknown: "#808080",
 };
 
-const RARITY_LABELS: Record<RarityTier, string> = {
-  bronze: "Bronze",
-  silver: "Silver",
-  gold: "Gold",
-  platinum: "Platinum",
-  unknown: "?",
+const RARITY_KEY_MAP: Record<RarityTier, string> = {
+  bronze: "ach.rarityBronze",
+  silver: "ach.raritySilver",
+  gold: "ach.rarityGold",
+  platinum: "ach.rarityPlatinum",
+  unknown: "ach.rarityBronze", // fallback
 };
 
-function formatUnlockTime(iso: string | undefined): string | null {
+function formatUnlockTime(iso: string | undefined, locale: Locale): string | null {
   if (!iso) return null;
   try {
     const d = new Date(iso);
@@ -61,11 +62,11 @@ function formatUnlockTime(iso: string | undefined): string | null {
     const diffMs = now.getTime() - d.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     if (diffDays < 0) return null; // future = glitch
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
+    if (diffDays === 0) return t("ach.timeToday", locale);
+    if (diffDays === 1) return t("ach.timeYesterday", locale);
+    if (diffDays < 30) return `${diffDays}${t("ach.timeDaysAgo", locale)}`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}${t("ach.timeMonthsAgo", locale)}`;
+    return `${Math.floor(diffDays / 365)}${t("ach.timeYearsAgo", locale)}`;
   } catch {
     return null;
   }
@@ -77,6 +78,7 @@ interface AchievementsTabProps {
   emojis: string[];
   loading?: boolean;
   connected?: boolean;
+  locale?: Locale;
   onHoverRow: (ach: Achievement | null, e?: { clientX: number; clientY: number }) => void;
   onHoverStatGated: (e: { clientX: number; clientY: number }) => void;
   onUnlockRow: (ach: Achievement) => void;
@@ -88,6 +90,7 @@ export default function AchievementsTab({
   emojis,
   loading = false,
   connected = true,
+  locale = "en",
   onHoverRow,
   onHoverStatGated,
   onUnlockRow,
@@ -115,17 +118,17 @@ export default function AchievementsTab({
       <div className="ach-toolbar">
         <input
           className="search"
-          placeholder="Search achievements..."
+          placeholder={t("ach.searchPlaceholder", locale)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        {FILTERS.map((f) => (
+        {FILTER_KEYS.map((f) => (
           <button
             key={f.id}
             className={`filter-btn${filter === f.id ? " active" : ""}`}
             onClick={() => setFilter(f.id)}
           >
-            {f.label}
+            {t(f.key, locale)}
           </button>
         ))}
       </div>
@@ -134,32 +137,32 @@ export default function AchievementsTab({
         {loading && (
           <EmptyState
             icon="⏳"
-            title="Connecting..."
-            body="Waiting for the Epic Unlocker pipe to deliver the achievement list."
+            title={t("ach.emptyConnecting", locale)}
+            body={t("ach.emptyConnectingBody", locale)}
           />
         )}
 
         {!loading && achievements.length === 0 && !connected && (
           <EmptyState
             icon="🔌"
-            title="Not connected"
-            body="Launch a game with Epic Unlocker injected to establish the pipe connection."
+            title={t("ach.emptyNotConnected", locale)}
+            body={t("ach.emptyNotConnectedBody", locale)}
           />
         )}
 
         {!loading && achievements.length === 0 && connected && (
           <EmptyState
             icon="📭"
-            title="No achievements"
-            body="The pipe is connected but no achievement definitions have been received yet. Try Refresh."
+            title={t("ach.emptyNoAch", locale)}
+            body={t("ach.emptyNoAchBody", locale)}
           />
         )}
 
         {!loading && achievements.length > 0 && filtered.length === 0 && (
           <EmptyState
             icon="🔍"
-            title="No matches"
-            body="No achievements match your current search and filter combination."
+            title={t("ach.emptyNoMatches", locale)}
+            body={t("ach.emptyNoMatchesBody", locale)}
           />
         )}
 
@@ -169,6 +172,7 @@ export default function AchievementsTab({
               key={ach.id}
               ach={ach}
               emoji={emojis[idx % emojis.length] || "🏅"}
+              locale={locale}
               iconSrc={
                 ach.iconPath && IS_TAURI
                   ? convertFileSrc(ach.iconPath)
@@ -188,12 +192,13 @@ interface AchievementRowProps {
   ach: Achievement;
   emoji: string;
   iconSrc?: string | null;
+  locale: Locale;
   onHover: (ach: Achievement | null, e?: { clientX: number; clientY: number }) => void;
   onHoverStatGated: (e: { clientX: number; clientY: number }) => void;
   onUnlock: (ach: Achievement) => void;
 }
 
-function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlock }: AchievementRowProps) {
+function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated, onUnlock }: AchievementRowProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const [flickerKey, setFlickerKey] = useState(0);
   const descRef = useRef<HTMLDivElement>(null);
@@ -211,13 +216,18 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
   }, [ach.desc]);
 
   const showImg = iconSrc && !imgFailed;
-  const unlockAgo = formatUnlockTime(ach.unlockTime);
+  const unlockAgo = formatUnlockTime(ach.unlockTime, locale);
 
   // Only trigger the row tooltip when the description is truncated (too long for the row)
   const handleRowMouseEnter = (e: React.MouseEvent) => {
     if (descTruncated) {
       onHover(ach, e);
     }
+  };
+
+  const rarityLabel = (tier: RarityTier): string => {
+    if (tier === "unknown") return "?";
+    return t(RARITY_KEY_MAP[tier], locale);
   };
 
   return (
@@ -298,7 +308,7 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
           </>
         )}
 
-        {ach.hidden && <span className="badge hidden">Hidden</span>}
+        {ach.hidden && <span className="badge hidden">{t("ach.badgeHidden", locale)}</span>}
 
         {/* G4: Rarity badge */}
         {ach.rarityTier && ach.rarityTier !== "unknown" && (
@@ -309,10 +319,10 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
               borderColor: RARITY_COLORS[ach.rarityTier],
             }}
             title={ach.rarityPercent != null
-              ? `${RARITY_LABELS[ach.rarityTier]} — ${ach.rarityPercent.toFixed(1)}% of players`
-              : RARITY_LABELS[ach.rarityTier]}
+              ? `${rarityLabel(ach.rarityTier)} — ${ach.rarityPercent.toFixed(1)}% of players`
+              : rarityLabel(ach.rarityTier)}
           >
-            {RARITY_LABELS[ach.rarityTier]}
+            {rarityLabel(ach.rarityTier)}
             {ach.rarityPercent != null && (
               <span className="rarity-pct">{ach.rarityPercent.toFixed(1)}%</span>
             )}
@@ -320,12 +330,12 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
         )}
 
         {ach.unlocked ? (
-          <span className="badge unlocked">Unlocked</span>
+          <span className="badge unlocked">{t("ach.badgeUnlocked", locale)}</span>
         ) : (
           <>
             <span
               className="badge stat"
-              title="What does Stat-gated mean? Hover for details."
+              title={t("tooltip.statGatedTitle", locale)}
               onMouseEnter={(e) => {
                 e.stopPropagation();
                 onHoverStatGated(e);
@@ -335,9 +345,9 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
                 onHover(null);
               }}
             >
-              Stat-gated
+              {t("ach.badgeStatGated", locale)}
             </span>
-            <span className="badge locked">Locked</span>
+            <span className="badge locked">{t("ach.badgeLocked", locale)}</span>
           </>
         )}
 
@@ -356,7 +366,7 @@ function AchievementRow({ ach, emoji, iconSrc, onHover, onHoverStatGated, onUnlo
             onUnlock(ach);
           }}
         >
-          {ach.unlocked ? "Done" : "Unlock"}
+          {ach.unlocked ? t("ach.btnDone", locale) : t("ach.btnUnlock", locale)}
         </button>
       </div>
     </div>

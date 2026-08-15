@@ -12,6 +12,7 @@
 
 import { useMemo } from "react";
 import type { DlcEntry } from "../../data/mockupData";
+import { t, type Locale } from "../../i18n";
 
 interface DlcTabProps {
   active: boolean;
@@ -20,6 +21,7 @@ interface DlcTabProps {
   entitlementCount?: number;
   loading?: boolean;
   connected?: boolean;
+  locale?: Locale;
 }
 
 export default function DlcTab({
@@ -28,6 +30,7 @@ export default function DlcTab({
   entitlementCount,
   loading = false,
   connected = true,
+  locale = "en",
 }: DlcTabProps) {
   const data = useMemo(() => dlc, [dlc]);
   const totalQueried = data.length;
@@ -41,41 +44,41 @@ export default function DlcTab({
     <div className={`tab-content${active ? " active" : ""}`} id="tab-dlc">
       <div className="dlc-stats">
         <span>
-          <strong>{totalQueried}</strong> DLCs queried
+          <strong>{totalQueried}</strong> {t("dlc.dlcsQueried", locale)}
         </span>
         <span>
-          <strong>{totalOwned}</strong> owned
+          <strong>{totalOwned}</strong> {t("dlc.owned", locale)}
         </span>
         <span>
-          Catalog: <strong>{totalQueried}</strong> titles
+          {t("dlc.catalog", locale)}: <strong>{totalQueried}</strong> {t("dlc.titles", locale)}
         </span>
         <span>
-          Entitlements: <strong>{ecDisplay}</strong>
+          {t("dlc.entitlements", locale)}: <strong>{ecDisplay}</strong>
         </span>
       </div>
       <div className="dlc-table-wrap">
         {loading && (
-          <EmptyState icon="⏳" title="Connecting…" body="Waiting for the Epic Unlocker pipe to deliver the DLC catalog." />
+          <EmptyState icon="⏳" title={t("dlc.emptyConnecting", locale)} body={t("dlc.emptyConnectingBody", locale)} />
         )}
         {!loading && data.length === 0 && !connected && (
           <EmptyState
             icon="🔌"
-            title="Not connected"
-            body="Launch a game with Epic Unlocker injected to establish the pipe connection. The DLC catalog will populate automatically."
+            title={t("dlc.emptyNotConnected", locale)}
+            body={t("dlc.emptyNotConnectedBody", locale)}
           />
         )}
         {!loading && data.length === 0 && connected && (
-          <EmptyState icon="📭" title="No DLC" body="The pipe is connected but no DLC catalog has been received yet." />
+          <EmptyState icon="📭" title={t("dlc.emptyNoDlc", locale)} body={t("dlc.emptyNoDlcBody", locale)} />
         )}
         {!loading && data.length > 0 && (
           <table className="dlc-table">
             <thead>
               <tr>
-                <th>Item ID</th>
-                <th>Title</th>
-                <th style={{ textAlign: "center" }}>Times Queried</th>
-                <th style={{ textAlign: "center" }}>Times Owned</th>
-                <th>Status</th>
+                <th>{t("dlc.itemId", locale)}</th>
+                <th>{t("dlc.tableTitle", locale)}</th>
+                <th style={{ textAlign: "center" }}>{t("dlc.timesQueried", locale)}</th>
+                <th style={{ textAlign: "center" }}>{t("dlc.timesOwned", locale)}</th>
+                <th>{t("dlc.status", locale)}</th>
               </tr>
             </thead>
             <tbody id="dlcBody">

@@ -27,11 +27,13 @@ import {
   openLogExternally,
 } from "../../lib/api";
 import type { AppSettings } from "../../types";
+import { t, type Locale } from "../../i18n";
 
 interface SettingsTabProps {
   active: boolean;
   theme: ThemeName;
   onThemeChange: (t: ThemeName) => void;
+  locale?: Locale;
 }
 
 interface ToggleProps {
@@ -59,7 +61,7 @@ function Toggle({ initial = false, onChange }: ToggleProps) {
   );
 }
 
-export default function SettingsTab({ active, theme, onThemeChange }: SettingsTabProps) {
+export default function SettingsTab({ active, theme, onThemeChange, locale = "en" }: SettingsTabProps) {
   // G2: persisted settings — load on mount, save on change.
   const [settings, setSettings] = useState<AppSettings | null>(null);
   // A1: SDK log path (empty string = not connected yet).
@@ -99,11 +101,11 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
       <div className="settings-wrap">
         {/* Appearance */}
         <div className="settings-group">
-          <div className="group-title">🎨 Appearance</div>
+          <div className="group-title">🎨 {t("settings.appearance", locale)}</div>
           <div className="setting-row">
             <div>
-              <div className="label">Theme</div>
-              <div className="desc">Choose your preferred color scheme</div>
+              <div className="label">{t("settings.themeLabel", locale)}</div>
+              <div className="desc">{t("settings.themeDesc", locale)}</div>
             </div>
             <div className="control">
               <select
@@ -122,13 +124,11 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
 
         {/* Behavior */}
         <div className="settings-group">
-          <div className="group-title">⚙️ Behavior</div>
+          <div className="group-title">⚙️ {t("settings.behavior", locale)}</div>
           <div className="setting-row">
             <div>
-              <div className="label">Auto-refresh interval</div>
-              <div className="desc">
-                How often to poll the game for updates
-              </div>
+              <div className="label">{t("settings.autoRefresh", locale)}</div>
+              <div className="desc">{t("settings.autoRefreshDesc", locale)}</div>
             </div>
             <div className="control">
               <select
@@ -147,10 +147,8 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">Connect on launch</div>
-              <div className="desc">
-                Automatically attempt to connect when the app starts
-              </div>
+              <div className="label">{t("settings.connectOnLaunch", locale)}</div>
+              <div className="desc">{t("settings.connectOnLaunchDesc", locale)}</div>
             </div>
             <div className="control">
               <Toggle
@@ -163,10 +161,10 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
 
         {/* Hotkeys */}
         <div className="settings-group">
-          <div className="group-title">⌨️ Hotkeys</div>
+          <div className="group-title">⌨️ {t("settings.hotkeys", locale)}</div>
           <div className="setting-row">
             <div>
-              <div className="label">Unlock All</div>
+              <div className="label">{t("settings.hotkeyUnlockAll", locale)}</div>
             </div>
             <div className="control">
               <span className="hotkey-display">Ctrl + Shift + U</span>
@@ -174,7 +172,7 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">Unlock from List</div>
+              <div className="label">{t("settings.hotkeyUnlockList", locale)}</div>
             </div>
             <div className="control">
               <span className="hotkey-display">Ctrl + Shift + L</span>
@@ -182,7 +180,7 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">Toggle Log Overlay</div>
+              <div className="label">{t("settings.hotkeyLogOverlay", locale)}</div>
             </div>
             <div className="control">
               <span className="hotkey-display">Shift + F5</span>
@@ -192,13 +190,11 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
 
         {/* Logging (unified: ScreamAPI.log + SDK log) */}
         <div className="settings-group">
-          <div className="group-title">📁 Logging</div>
+          <div className="group-title">📁 {t("settings.logging", locale)}</div>
           <div className="setting-row">
             <div>
-              <div className="label">Maximum log lines</div>
-              <div className="desc">
-                Number of lines retained in the log view (older lines are dropped)
-              </div>
+              <div className="label">{t("settings.maxLogLines", locale)}</div>
+              <div className="desc">{t("settings.maxLogLinesDesc", locale)}</div>
             </div>
             <div className="control">
               <select
@@ -218,10 +214,8 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">ScreamAPI.log</div>
-              <div className="desc">
-                Curated unlock-debugging log with hook events, achievement state, and pipe messages
-              </div>
+              <div className="label">{t("settings.screamApiLog", locale)}</div>
+              <div className="desc">{t("settings.screamApiLogDesc", locale)}</div>
             </div>
             <div className="control">
               <button
@@ -230,17 +224,17 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
                   alert(`Failed to open log: ${e}`)
                 )}
               >
-                Open
+                {t("settings.open", locale)}
               </button>
             </div>
           </div>
           <div className="setting-row">
             <div>
-              <div className="label">EOS SDK log</div>
+              <div className="label">{t("settings.sdkLog", locale)}</div>
               <div className="desc">
                 {sdkLogPath
-                  ? "Verbose EOS SDK backend trace (separate from ScreamAPI.log to avoid noise)"
-                  : "Not available until a game connects"}
+                  ? t("settings.sdkLogDesc", locale)
+                  : t("settings.sdkLogNotAvailable", locale)}
               </div>
               {sdkLogPath && (
                 <div
@@ -267,7 +261,7 @@ export default function SettingsTab({ active, theme, onThemeChange }: SettingsTa
                   )
                 }
               >
-                Open
+                {t("settings.open", locale)}
               </button>
             </div>
           </div>

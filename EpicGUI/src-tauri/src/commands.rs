@@ -903,3 +903,43 @@ pub async fn fetch_achievement_rarity(
 
     Ok(merged_count)
 }
+
+/// Clears the on-disk icon cache directory (<app_local_data_dir>/EpicGUI/icons/)
+/// so the next Fetch Icons call will re-download everything.
+/// Returns the number of files deleted.
+#[tauri::command]
+pub async fn clear_icon_cache(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<RwLock<AppState>>>,
+) -> Result<u32, String> {
+    let cache_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?
+        .join("EpicGUI")
+        .join("icons");
+
+    let mut deleted = 0u32;
+    if cache_dir.exists() {
+        let entries = std::fs::read_dir(&cache_dir)
+            .map_err(|e| format!("Failed to read icon cache dir: {e}"))?;
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if entry.path().is_file() {
+                    if std::fs::remove_file(entry.path()).is_ok() {
+                        deleted += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Clear icon_url from in-memory achievements so the UI re-fetches icons
+    let mut s = state.write().await;
+    for ach in &mut s.achievements {
+        ach.icon_url = None;
+    }
+
+    log::info!("[IconCache] Cleared {} cached icon files", deleted);
+    Ok(deleted)
+}

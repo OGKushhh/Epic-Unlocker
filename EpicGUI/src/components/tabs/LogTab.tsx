@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogLine } from "../../data/mockupData";
+import { t, type Locale } from "../../i18n";
 
 interface LogTabProps {
   active: boolean;
@@ -26,6 +27,7 @@ interface LogTabProps {
   loading?: boolean;
   connected?: boolean;
   logPath?: string;
+  locale?: Locale;
   /** Called when the user clicks "Clear" — should invoke the `clear_log` Tauri command. */
   onClear?: () => Promise<void> | void;
   /** Called when the user clicks "Open File" — should invoke `open_log_externally`. */
@@ -38,6 +40,7 @@ export default function LogTab({
   loading = false,
   connected = true,
   logPath,
+  locale = "en",
   onClear,
   onOpenFile,
 }: LogTabProps) {
@@ -117,7 +120,7 @@ export default function LogTab({
       <div className="log-toolbar">
         <input
           className="search"
-          placeholder="Filter log lines…"
+          placeholder={t("log.filterPlaceholder", locale)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -127,14 +130,14 @@ export default function LogTab({
           onClick={handleClear}
           disabled={clearStatus === "working"}
         >
-          {clearStatus === "working" ? "Clearing…" : clearStatus === "done" ? "Cleared ✓" : "Clear"}
+          {clearStatus === "working" ? t("log.clearing", locale) : clearStatus === "done" ? t("log.cleared", locale) : t("log.clear", locale)}
         </button>
         <button
           className={`btn${autoScroll ? " active" : ""}`}
           onClick={() => setAutoScroll((v) => !v)}
           title="Pin the log view to the bottom when new lines arrive"
         >
-          Auto-scroll
+          {t("log.autoScroll", locale)}
         </button>
         <button
           className="btn"
@@ -142,7 +145,7 @@ export default function LogTab({
           onClick={handleOpenFile}
           disabled={openStatus === "working" || !logPath}
         >
-          {openStatus === "working" ? "Opening…" : "Open File"}
+          {openStatus === "working" ? t("log.opening", locale) : t("log.openFile", locale)}
         </button>
         {openStatus === "error" && (
           <span
@@ -170,7 +173,7 @@ export default function LogTab({
               fontStyle: "italic",
             }}
           >
-            (no log path yet)
+            {t("log.noLogPath", locale)}
           </span>
         )}
       </div>
@@ -183,15 +186,14 @@ export default function LogTab({
       >
         {loading && (
           <div className="log-line">
-            <span className="lvl-info">⏳ Connecting to Epic Unlocker pipe…</span>
+            <span className="lvl-info">{t("log.connecting", locale)}</span>
           </div>
         )}
 
         {!loading && lines.length === 0 && !connected && (
           <div className="log-line">
             <span className="lvl-warn">
-              🔌 Not connected. Launch a game with Epic Unlocker injected to start
-              receiving log output.
+              {t("log.notConnected", locale)}
             </span>
           </div>
         )}
@@ -199,14 +201,14 @@ export default function LogTab({
         {!loading && lines.length === 0 && connected && logPath && (
           <div className="log-line">
             <span className="lvl-info">
-              📄 Log file: {logPath} — waiting for new log lines…
+              📄 Log file: {logPath} — {t("log.noLines", locale).toLowerCase()}
             </span>
           </div>
         )}
 
         {!loading && lines.length === 0 && connected && !logPath && (
           <div className="log-line">
-            <span className="lvl-info">📄 No log path received yet.</span>
+            <span className="lvl-info">{t("log.noPathYet", locale)}</span>
           </div>
         )}
 
@@ -224,7 +226,7 @@ export default function LogTab({
 
         {lines.length > 0 && filtered.length === 0 && (
           <div className="log-line">
-            <span className="lvl-info">No log lines match your filter.</span>
+            <span className="lvl-info">{t("log.noFilterMatch", locale)}</span>
           </div>
         )}
       </div>

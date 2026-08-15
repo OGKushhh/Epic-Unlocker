@@ -112,3 +112,8 @@ export const getGameInfo = (): Promise<GameInfo> =>
 // Returns the count of achievements that got rarity data merged in.
 export const fetchAchievementRarity = (): Promise<number> =>
   invoke("fetch_achievement_rarity");
+
+// Clear the on-disk icon cache. Returns the number of files deleted.
+// Next Fetch Icons call will re-download everything from scratch.
+export const clearIconCache = (): Promise<number> =>
+  invoke("clear_icon_cache");

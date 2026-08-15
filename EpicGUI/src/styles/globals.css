@@ -135,6 +135,17 @@ body {
   transition: background 0.2s;
   line-height: 26px;
 }
+.titlebar-btn {
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+  line-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.titlebar-btn:hover { background: var(--panel-hi); }
 
 /* ── Windows-style window controls (right side of titlebar) ── */
 .win-controls {
@@ -805,7 +816,17 @@ body {
 [data-tauri-drag-region] input,
 [data-tauri-drag-region] select,
 [data-tauri-drag-region] .theme-toggle,
+[data-tauri-drag-region] .titlebar-btn,
 [data-tauri-drag-region] .conn,
-[data-tauri-drag-region] .win-controls {
+[data-tauri-drag-region] .win-controls,
+[data-tauri-drag-region] .volume-controls {
   -webkit-app-region: no-drag;
 }
+
+/* ── RTL support (Arabic) ── */
+[dir="rtl"] .sidebar { direction: rtl; text-align: right; }
+[dir="rtl"] .stat-grid { direction: rtl; }
+[dir="rtl"] .actions { direction: rtl; }
+[dir="rtl"] .modal-body { direction: rtl; text-align: right; }
+[dir="rtl"] .ach-row { direction: rtl; }
+[dir="rtl"] .titlebar { direction: ltr; } /* Titlebar always LTR */

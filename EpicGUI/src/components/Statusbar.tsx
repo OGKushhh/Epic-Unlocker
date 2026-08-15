@@ -9,6 +9,8 @@
  * exist yet — launch a game with Epic Unlocker injected).
  */
 
+import { t, type Locale } from "../i18n";
+
 interface StatusbarProps {
   connected?: boolean;
   loading?: boolean;
@@ -18,6 +20,7 @@ interface StatusbarProps {
    */
   logSizeBytes?: number;
   lastError?: string | null;
+  locale?: Locale;
 }
 
 /** Format a byte count as "X KB" / "X MB" / "X GB" with 1 decimal place. */
@@ -34,6 +37,7 @@ export default function Statusbar({
   loading = false,
   logSizeBytes,
   lastError = null,
+  locale = "en",
 }: StatusbarProps) {
   const logSize = logSizeBytes != null ? formatBytes(logSizeBytes) : "—";
   const dotColor = loading
@@ -48,10 +52,10 @@ export default function Statusbar({
     : "0 0 6px var(--red)";
 
   const label = loading
-    ? "Connecting…"
+    ? t("status.connecting", locale)
     : connected
-    ? "Connected"
-    : "Disconnected";
+    ? t("status.connected", locale)
+    : t("status.disconnected", locale);
 
   // When disconnected, show the underlying error inline so the user can
   // diagnose (e.g. pipe not found → no game running with Epic Unlocker).
@@ -72,7 +76,7 @@ export default function Statusbar({
         )}
       </div>
       <div className="right">
-        <span>Log size: {logSize}</span>
+        <span>{t("status.logSize", locale)}: {logSize}</span>
       </div>
     </div>
   );

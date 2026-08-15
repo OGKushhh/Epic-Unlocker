@@ -80,6 +80,7 @@ pub fn run() {
             // G4/A2: game info + achievement rarity
             commands::get_game_info,
             commands::fetch_achievement_rarity,
+            commands::clear_icon_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,25 +2,32 @@
  * Titlebar — frameless window titlebar with window controls.
  *
  * Layout (left → right):
- *   [🎨 theme toggle]  Title  [conn chip]  [─ minimize · □ maximize · ✕ close]
+ *   [🌐 lang] [🎨 theme] [🎵 music] [🔊━━●━━ volume]  Title  [conn chip]  [─ · □ · ✕]
  *
- * Window controls use the Windows convention (minimize · maximize · close,
- * left-to-right) with SVG icons:
- *   - ─ (minimize)  → window_minimize
- *   - □ (maximize)  → window_toggle_maximize
- *   - ✕ (close)     → window_close (red on hover)
- *
- * In browser preview (no Tauri runtime), the invocations fail silently.
+ * Language toggle: EN ⇄ AR (Arabic enables RTL)
+ * Music: on/off toggle + inline volume slider + mute
+ * Theme: cycles Gold → Light → Dark
+ * Window controls: minimize, maximize, close (Windows convention)
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import type { Locale } from "../i18n";
 
 interface TitlebarProps {
   themeIcon: string;
   onCycleTheme: () => void;
+  locale: Locale;
+  onToggleLocale: () => void;
+  musicPlaying: boolean;
+  onToggleMusic: () => void;
+  volume: number;
+  onVolumeChange: (v: number) => void;
+  muted: boolean;
+  onToggleMute: () => void;
   connected?: boolean;
   loading?: boolean;
   gameName?: string;
+  titleText: string;
 }
 
 async function safeInvoke(cmd: string) {
@@ -34,9 +41,18 @@ async function safeInvoke(cmd: string) {
 export default function Titlebar({
   themeIcon,
   onCycleTheme,
+  locale,
+  onToggleLocale,
+  musicPlaying,
+  onToggleMusic,
+  volume,
+  onVolumeChange,
+  muted,
+  onToggleMute,
   connected = false,
   loading = false,
   gameName,
+  titleText,
 }: TitlebarProps) {
   const pipColor = loading
     ? "#ffbd2e"
@@ -56,7 +72,20 @@ export default function Titlebar({
 
   return (
     <div className="titlebar" data-tauri-drag-region>
-      {/* Left: theme toggle */}
+      {/* Left: language toggle */}
+      <div
+        className="titlebar-btn"
+        title={locale === "en" ? "Switch to العربية" : "التبديل إلى English"}
+        onClick={onToggleLocale}
+        style={{ fontSize: "14px", cursor: "pointer" }}
+      >
+        {locale === "en" ? "🌐" : "🌐"}
+        <span style={{ fontSize: "10px", marginLeft: "2px", opacity: 0.8 }}>
+          {locale === "en" ? "EN" : "AR"}
+        </span>
+      </div>
+
+      {/* Theme toggle */}
       <div
         className="theme-toggle"
         title="Cycle themes (Gold → Light → Dark)"
@@ -65,8 +94,58 @@ export default function Titlebar({
         {themeIcon}
       </div>
 
+      {/* Music toggle */}
+      <div
+        className="titlebar-btn"
+        title={musicPlaying ? "Stop music" : "Play music"}
+        onClick={onToggleMusic}
+        style={{
+          fontSize: "14px",
+          cursor: "pointer",
+          opacity: musicPlaying ? 1 : 0.5,
+        }}
+      >
+        {musicPlaying ? "🎵" : "🎵"}
+      </div>
+
+      {/* Volume controls (visible when music is playing) */}
+      {musicPlaying && (
+        <div
+          className="volume-controls"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            marginLeft: "2px",
+          }}
+        >
+          <div
+            className="titlebar-btn"
+            title={muted ? "Unmute" : "Mute"}
+            onClick={onToggleMute}
+            style={{ fontSize: "12px", cursor: "pointer" }}
+          >
+            {muted ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={muted ? 0 : Math.round(volume * 100)}
+            onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+            style={{
+              width: "80px",
+              height: "4px",
+              cursor: "pointer",
+              accentColor: "var(--accent, #ffbd2e)",
+            }}
+            title={`Volume: ${Math.round(volume * 100)}%`}
+          />
+        </div>
+      )}
+
       <div className="title" data-tauri-drag-region>
-        Epic Unlocker — Achievement Manager
+        {titleText}
       </div>
 
       <div className="conn" title={connected ? "Pipe connected" : "Pipe not connected"}>
@@ -77,7 +156,7 @@ export default function Titlebar({
         <span>{connText}</span>
       </div>
 
-      {/* Right: Windows-style window controls (─ minimize · □ maximize · ✕ close) */}
+      {/* Right: Windows-style window controls */}
       <div className="win-controls">
         <button
           className="win-btn"

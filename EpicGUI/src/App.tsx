@@ -26,17 +26,11 @@ import LogTab from "./components/tabs/LogTab";
 import SettingsTab from "./components/tabs/SettingsTab";
 import { useToasts } from "./hooks/useToasts";
 import { useTheme } from "./hooks/useTheme";
+import { useMusic } from "./hooks/useMusic";
 import { useGameData } from "./hooks/useGameData";
 import { achievementEmojis, type Achievement } from "./data/mockupData";
 import { clearLog, openLogExternally } from "./lib/api";
-
-// ── Stat-gated explanation tooltip content ──────────────────────────────────
-const STAT_GATED_TITLE = "Stat-Gated Achievement";
-const STAT_GATED_BODY =
-  "These achievements unlock when underlying game stats reach required thresholds. " +
-  "The unlocker force-ingests the stat values through the EOS Stats interface. " +
-  "After triggering, please wait 5–30 seconds for the game to process the new stats " +
-  "and grant the achievement.";
+import { t, isRTL, type Locale } from "./i18n";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("ach");
@@ -51,6 +45,13 @@ export default function App() {
 
   const { toasts, show: showToast } = useToasts();
   const { theme, setTheme, cycleTheme, icon: themeIcon } = useTheme();
+  const { playing: musicPlaying, volume, muted, togglePlay, setVolume, toggleMute } = useMusic();
+  const [locale, setLocale] = useState<Locale>("en");
+
+  // Localized stat-gated tooltip content
+  const STAT_GATED_TITLE = t("tooltip.statGatedTitle", locale);
+  const STAT_GATED_BODY = t("tooltip.statGatedBody", locale);
+
   const {
     achievements,
     dlc,
@@ -66,10 +67,16 @@ export default function App() {
     unlockAll,
     fetchIcons,
     fetchRarity,
+    clearIconCache,
   } = useGameData();
 
   const connected = connection?.connected ?? false;
   const gameName = connection?.gameName;
+
+  // ── Locale toggle ────────────────────────────────────────────────
+  const handleToggleLocale = useCallback(() => {
+    setLocale((l) => l === "en" ? "ar" : "en");
+  }, []);
 
   // ── Hover tooltip handlers ────────────────────────────────────────────────
   const handleHoverRow = useCallback(
@@ -193,6 +200,21 @@ export default function App() {
     }
   }, [fetchRarity, showToast, connected]);
 
+  const handleClearCacheClick = useCallback(async () => {
+    showToast("🧹 Clearing icon cache…", "Deleting cached icon files from disk.");
+    try {
+      const deleted = await clearIconCache();
+      if (deleted > 0) {
+        showToast("✅ Cache cleared", `Deleted ${deleted} cached icon${deleted === 1 ? "" : "s"}. Run Fetch Icons to re-download.`);
+      } else {
+        showToast("✅ Cache cleared", "No cached icons found on disk.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast("❌ Clear failed", msg);
+    }
+  }, [clearIconCache, showToast]);
+
   const handleConfirmUnlockAll = useCallback(async () => {
     showToast("🚀 Unlock All Started", `Queued all ${achievements.length} achievements.`);
     const ok = await unlockAll();
@@ -244,13 +266,22 @@ export default function App() {
   }, [connected]);
 
   return (
-    <div className="window">
+    <div className="window" dir={isRTL(locale) ? "rtl" : "ltr"}>
       <Titlebar
         themeIcon={themeIcon}
         onCycleTheme={cycleTheme}
+        locale={locale}
+        onToggleLocale={handleToggleLocale}
+        musicPlaying={musicPlaying}
+        onToggleMusic={togglePlay}
+        volume={volume}
+        onVolumeChange={setVolume}
+        muted={muted}
+        onToggleMute={toggleMute}
         connected={connected}
         loading={loading}
         gameName={gameName}
+        titleText={t("titlebar.title", locale)}
       />
 
       {isDevMode && (
@@ -270,7 +301,7 @@ export default function App() {
         </div>
       )}
 
-      <Menubar active={activeTab} onChange={setActiveTab} />
+      <Menubar active={activeTab} onChange={setActiveTab} locale={locale} />
 
       <div className="main">
         <Sidebar
@@ -280,10 +311,12 @@ export default function App() {
           connected={connected}
           loading={loading}
           gameName={gameName}
+          locale={locale}
           onUnlockAllClick={handleUnlockAllClick}
           onRefreshClick={handleRefreshClick}
           onFetchIconsClick={handleFetchIconsClick}
           onFetchRarityClick={handleFetchRarityClick}
+          onClearCacheClick={handleClearCacheClick}
         />
 
         <div className="content">
@@ -293,6 +326,7 @@ export default function App() {
             emojis={achievementEmojis}
             loading={loading}
             connected={connected}
+            locale={locale}
             onHoverRow={handleHoverRow}
             onHoverStatGated={handleHoverStatGated}
             onUnlockRow={handleUnlockRow}
@@ -303,6 +337,7 @@ export default function App() {
             entitlementCount={entitlementCount}
             loading={loading}
             connected={connected}
+            locale={locale}
           />
           <LogTab
             active={activeTab === "log"}
@@ -310,6 +345,7 @@ export default function App() {
             loading={loading}
             connected={connected}
             logPath={logPath}
+            locale={locale}
             onClear={handleClearLog}
             onOpenFile={handleOpenLogFile}
           />
@@ -317,6 +353,7 @@ export default function App() {
             active={activeTab === "settings"}
             theme={theme}
             onThemeChange={setTheme}
+            locale={locale}
           />
 
           <Statusbar
@@ -324,6 +361,7 @@ export default function App() {
             loading={loading}
             lastError={connection?.lastError ?? null}
             logSizeBytes={logFileSize}
+            locale={locale}
           />
         </div>
       </div>
@@ -333,6 +371,7 @@ export default function App() {
         onClose={() => setModalOpen(false)}
         onConfirm={handleConfirmUnlockAll}
         totalCount={achievements.length}
+        locale={locale}
       />
 
       <Tooltip state={tooltip} />

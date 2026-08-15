@@ -7,12 +7,14 @@
  */
 
 import { useEffect } from "react";
+import { t, type Locale } from "../i18n";
 
 interface UnlockAllModalProps {
   open: boolean;
   onClose: () => void;
   onConfirm: () => void;
   totalCount: number;
+  locale?: Locale;
 }
 
 export default function UnlockAllModal({
@@ -20,6 +22,7 @@ export default function UnlockAllModal({
   onClose,
   onConfirm,
   totalCount,
+  locale = "en",
 }: UnlockAllModalProps) {
   // Esc to close
   useEffect(() => {
@@ -42,30 +45,61 @@ export default function UnlockAllModal({
       }}
     >
       <div className="modal-box">
-        <div className="modal-title">⚠️ Unlock All Achievements</div>
+        <div className="modal-title">⚠️ {t("modal.unlockTitle", locale)}</div>
         <div className="modal-body">
           <p>
-            This will attempt to unlock{" "}
-            <strong>all {totalCount} achievements</strong> for the current game.
+            {t("modal.unlockBody1", locale)}{" "}
+            <strong>{t("modal.unlockBody2", locale)} {totalCount} {t("modal.unlockBody3", locale)}</strong>
           </p>
           <p style={{ marginTop: "8px" }}>
-            This includes stat-gated achievements which will be force-ingested
-            via the EOS stats interface.
+            {t("modal.statGated", locale)}
           </p>
-          <div className="warning-highlight">
-            🚫 <strong>Warning:</strong> Using this on a legitimate Epic Games
-            account may flag your profile on achievement tracking sites like{" "}
-            <strong>Exophase</strong> or{" "}
-            <strong>TrueAchievements</strong>. Your profile could be marked as
-            "cheated" or banned from leaderboards.
+
+          {/* Warning Box – uniform border, no top stripe, site names plain bold */}
+          <div
+            style={{
+              backgroundColor: "#fff0f0",
+              border: "2px solid #c62828",
+              borderRadius: "8px",
+              padding: "16px",
+              margin: "16px 0",
+              boxShadow: "0 2px 8px rgba(198, 40, 40, 0.15)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "8px",
+              }}
+            >
+              <span style={{ fontSize: "28px", lineHeight: 1 }}>⛔</span>
+              <strong
+                style={{
+                  color: "#b71c1c",
+                  fontSize: "18px",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                {t("modal.dangerTitle", locale)}
+              </strong>
+            </div>
+            <p style={{ margin: 0, color: "#6d1a1a", fontSize: "15px" }}>
+              {t("modal.dangerBody", locale)}{" "}
+              <strong>Exophase</strong> {t("modal.dangerOr", locale)} <strong>TrueAchievements</strong>.
+              {t("modal.dangerMarked", locale)}{" "}
+              {t("modal.dangerBanned", locale)}
+            </p>
           </div>
+
           <p style={{ marginTop: "10px", fontSize: "13px" }}>
-            Are you sure you want to proceed?
+            {t("modal.areYouSure", locale)}
           </p>
         </div>
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>
-            Cancel
+            {t("modal.cancel", locale)}
           </button>
           <button
             className="btn-danger"
@@ -74,7 +108,7 @@ export default function UnlockAllModal({
               onClose();
             }}
           >
-            Yes, Unlock All
+            {t("modal.confirm", locale)}
           </button>
         </div>
       </div>

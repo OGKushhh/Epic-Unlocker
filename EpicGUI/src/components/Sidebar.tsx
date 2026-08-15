@@ -14,6 +14,7 @@
 import { useState } from "react";
 import type { Toast } from "../hooks/useToasts";
 import type { Achievement } from "../data/mockupData";
+import { t, type Locale } from "../i18n";
 
 // Pool of game-themed emojis. One is picked at random on every app startup
 // (well, on every Sidebar mount — which is once per app session) just for fun.
@@ -32,10 +33,12 @@ interface SidebarProps {
   loading?: boolean;
   /** Display name of the connected game (from Rust backend). */
   gameName?: string;
+  locale?: Locale;
   onUnlockAllClick: () => void;
   onRefreshClick: () => void;
   onFetchIconsClick: () => void;
   onFetchRarityClick: () => void;
+  onClearCacheClick: () => void;
 }
 
 export default function Sidebar({
@@ -45,10 +48,12 @@ export default function Sidebar({
   connected = false,
   loading = false,
   gameName,
+  locale = "en",
   onUnlockAllClick,
   onRefreshClick,
   onFetchIconsClick,
   onFetchRarityClick,
+  onClearCacheClick,
 }: SidebarProps) {
   // Pick a random game emoji ONCE per app session (lazy initial state).
   // Re-renders reuse the same value — only a full app restart picks a new one.
@@ -66,18 +71,18 @@ export default function Sidebar({
 
   // Game card meta reflects connection state
   const gameMeta = loading
-    ? "Connecting…"
+    ? t("sidebar.connecting", locale)
     : connected
     ? "EOS SDK 1.16.0"
-    : "Not connected";
+    : t("sidebar.notConnected", locale);
 
   // Game name comes from the Rust backend (ConnectionStatus.gameName).
   // When disconnected, show "No Game" instead of a fake title.
   const displayName = loading
-    ? "Connecting…"
+    ? t("sidebar.connecting", locale)
     : connected
     ? (gameName ?? "Epic Game")
-    : "No Game";
+    : t("sidebar.noGame", locale);
 
   return (
     <div className="sidebar" id="sidebar">
@@ -95,19 +100,19 @@ export default function Sidebar({
               /{total}
             </span>
           </div>
-          <div className="lbl">Unlocked</div>
+          <div className="lbl">{t("sidebar.unlocked", locale)}</div>
         </div>
         <div className="stat">
           <div className="num">{locked}</div>
-          <div className="lbl">Locked</div>
+          <div className="lbl">{t("sidebar.locked", locale)}</div>
         </div>
         <div className="stat">
           <div className="num">{statGated}</div>
-          <div className="lbl">Stat-gated</div>
+          <div className="lbl">{t("sidebar.statGated", locale)}</div>
         </div>
         <div className="stat">
           <div className="num">{progress}%</div>
-          <div className="lbl">Progress</div>
+          <div className="lbl">{t("sidebar.progress", locale)}</div>
         </div>
       </div>
 
@@ -117,16 +122,19 @@ export default function Sidebar({
           onClick={onUnlockAllClick}
           title="Ctrl + Shift + U"
         >
-          ⚡ Unlock All (Ctrl+Shift+U)
+          {t("sidebar.unlockAll", locale)}
         </button>
         <button className="action-btn" onClick={onRefreshClick}>
-          🔄 Refresh
+          {t("sidebar.refresh", locale)}
         </button>
         <button className="action-btn" onClick={onFetchIconsClick}>
-          🖼️ Fetch Icons
+          {t("sidebar.fetchIcons", locale)}
         </button>
         <button className="action-btn" onClick={onFetchRarityClick}>
-          🏆 Fetch Rarity
+          {t("sidebar.fetchRarity", locale)}
+        </button>
+        <button className="action-btn" onClick={onClearCacheClick}>
+          {t("sidebar.clearCache", locale)}
         </button>
       </div>
 

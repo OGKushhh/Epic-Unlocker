@@ -38,6 +38,7 @@ import {
   refreshAchievements,
   fetchAchievementIcons,
   fetchAchievementRarity,
+  clearIconCache,
   type IconFetchResult,
 } from "../lib/api";
 import type {
@@ -144,6 +145,11 @@ export interface GameDataState {
    * Returns the count of achievements that got rarity data.
    */
   fetchRarity: () => Promise<number>;
+  /**
+   * Clear the on-disk icon cache. Returns the number of files deleted.
+   * Next fetchIcons() will re-download everything from scratch.
+   */
+  clearIconCache: () => Promise<number>;
   /** Game info from DLL (sandbox ID, product ID, EOS version). */
   gameInfo: RustGameInfo | null;
 }
@@ -550,6 +556,25 @@ export function useGameData(): GameDataState {
     [inTauri]
   );
 
+  const clearIconCacheFn = useCallback(
+    async (): Promise<number> => {
+      if (!inTauri) return 0;
+      try {
+        const deleted = await clearIconCache();
+        // Re-fetch achievements to pick up the cleared icon paths
+        const raw: RustAchievement[] = await getAchievements();
+        setAchievements(() => {
+          return raw.map((r) => adaptAchievement(r));
+        });
+        return deleted;
+      } catch (e) {
+        console.error("clear_icon_cache failed:", e);
+        return 0;
+      }
+    },
+    [inTauri]
+  );
+
   return {
     achievements,
     dlc,
@@ -565,6 +590,7 @@ export function useGameData(): GameDataState {
     unlockAll,
     fetchIcons,
     fetchRarity,
+    clearIconCache: clearIconCacheFn,
     gameInfo,
   };
 }
