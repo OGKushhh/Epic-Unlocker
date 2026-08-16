@@ -229,10 +229,10 @@ export default function AchievementsTab({
                 right: 0,
                 zIndex: 100,
                 marginTop: "4px",
-                background: "var(--card, #1e1e1e)",
-                border: "1px solid var(--border, #333)",
+                background: "var(--card)",
+                border: "1px solid var(--border)",
                 borderRadius: "6px",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                boxShadow: "var(--shadow)",
                 minWidth: "180px",
                 overflow: "hidden",
               }}
@@ -247,11 +247,11 @@ export default function AchievementsTab({
                   padding: "8px 12px",
                   cursor: "pointer",
                   fontSize: "13px",
-                  color: sortMode === "default" ? "var(--accent, #f67014)" : "var(--text)",
-                  background: sortMode === "default" ? "var(--accent-dim, rgba(246,112,20,0.1))" : "transparent",
+                  color: sortMode === "default" ? "var(--accent)" : "var(--text)",
+                  background: sortMode === "default" ? "var(--accent-dim)" : "transparent",
                   fontWeight: sortMode === "default" ? 600 : 400,
                 }}
-                onMouseEnter={(e) => { if (sortMode !== "default") e.currentTarget.style.background = "var(--hover, rgba(255,255,255,0.05))"; }}
+                onMouseEnter={(e) => { if (sortMode !== "default") e.currentTarget.style.background = "var(--hover)"; }}
                 onMouseLeave={(e) => { if (sortMode !== "default") e.currentTarget.style.background = "transparent"; }}
               >
                 {t("ach.sortDefault", locale)}
@@ -267,11 +267,11 @@ export default function AchievementsTab({
                     padding: "8px 12px",
                     cursor: "pointer",
                     fontSize: "13px",
-                    color: sortMode === opt.id ? "var(--accent, #f67014)" : "var(--text)",
-                    background: sortMode === opt.id ? "var(--accent-dim, rgba(246,112,20,0.1))" : "transparent",
+                    color: sortMode === opt.id ? "var(--accent)" : "var(--text)",
+                    background: sortMode === opt.id ? "var(--accent-dim)" : "transparent",
                     fontWeight: sortMode === opt.id ? 600 : 400,
                   }}
-                  onMouseEnter={(e) => { if (sortMode !== opt.id) e.currentTarget.style.background = "var(--hover, rgba(255,255,255,0.05))"; }}
+                  onMouseEnter={(e) => { if (sortMode !== opt.id) e.currentTarget.style.background = "var(--hover)"; }}
                   onMouseLeave={(e) => { if (sortMode !== opt.id) e.currentTarget.style.background = "transparent"; }}
                 >
                   {t(opt.key, locale)}
