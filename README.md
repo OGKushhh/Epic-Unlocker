@@ -21,8 +21,8 @@
   <img src="https://img.shields.io/badge/C++-17-00599C?logo=c%2B%2B&logoColor=white" alt="C++17">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white" alt="Platform">
-  <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/total?label=downloads&color=brightgreen" alt="Total Downloads">
-  <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/latest/total?label=downloads%40latest&color=brightgreen" alt="Latest Release Downloads">
+  <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/total?label=downloads&color=0078D4" alt="Total Downloads">
+  <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/latest/total?label=downloads%40latest&color=0078D4" alt="Latest Release Downloads">
 </p>
 <p align="center">
   <a href="https://ko-fi.com/abdobest">
