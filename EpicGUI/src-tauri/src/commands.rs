@@ -944,3 +944,82 @@ pub async fn clear_icon_cache(
     log::info!("[IconCache] Cleared {} cached icon files", deleted);
     Ok(deleted)
 }
+
+// ── Manifest scanning & upload ──────────────────────────────────────────────
+
+/// Scan Epic Games Launcher manifest directories for .manifest and .item files.
+/// Returns a list of manifests with SHA256 hashes (no parsing).
+#[tauri::command]
+pub async fn scan_manifests(
+    _app: tauri::AppHandle,
+) -> Result<Vec<crate::manifest::ScannedManifest>, String> {
+    log::info!("[scan_manifests] Starting manifest scan");
+    // Directory scanning is synchronous I/O; run on a blocking thread
+    // to avoid blocking the Tokio runtime.
+    let results = tokio::task::spawn_blocking(|| {
+        crate::manifest::scan_manifests_on_disk()
+    })
+    .await
+    .map_err(|e| format!("Scan task panicked: {e}"))?;
+    Ok(results)
+}
+
+/// Upload the given manifest files to the API.
+/// `files` is a list of file paths (as returned by scan_manifests).
+/// Files already uploaded (by hash) are skipped.
+#[tauri::command]
+pub async fn upload_manifests(
+    app: tauri::AppHandle,
+    files: Vec<String>,
+) -> Result<Vec<crate::manifest::ManifestUploadResult>, String> {
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("📤 upload_manifests COMMAND called with {} files", files.len());
+    for (i, f) in files.iter().enumerate() {
+        println!("  [{}] {}", i, f);
+    }
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    // Check consent before uploading
+    let consent_state = crate::manifest::get_consent_state(&app)?;
+    println!("📋 Consent state: consent={}, dismissed={}", consent_state.consent, consent_state.dismissed);
+    if !consent_state.consent {
+        println!("❌ Consent not granted – returning error");
+        return Err("Manifest upload consent not granted".to_string());
+    }
+
+    let results = crate::manifest::upload_manifests_to_api(&app, &files).await?;
+    println!("📋 upload_manifests COMMAND returning {} results", results.len());
+    for r in &results {
+        println!("  {} → {}", r.file_name, r.status);
+    }
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    Ok(results)
+}
+
+/// Get the set of SHA256 hashes for manifests that have already been uploaded.
+#[tauri::command]
+pub async fn get_uploaded_manifest_hashes(
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    crate::manifest::read_uploaded_hashes(&app)
+}
+
+/// Get the current manifest consent state (consent + dismissed flags).
+#[tauri::command]
+pub async fn get_manifest_consent(
+    app: tauri::AppHandle,
+) -> Result<crate::manifest::ManifestConsentState, String> {
+    crate::manifest::get_consent_state(&app)
+}
+
+/// Set manifest consent flags.
+/// - consent: whether uploads are enabled
+/// - dismissed: whether the one-time consent modal was dismissed
+#[tauri::command]
+pub async fn set_manifest_consent(
+    app: tauri::AppHandle,
+    consent: bool,
+    dismissed: bool,
+) -> Result<(), String> {
+    crate::manifest::set_consent_state(&app, consent, dismissed)
+}

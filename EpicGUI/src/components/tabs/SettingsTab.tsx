@@ -34,6 +34,10 @@ interface SettingsTabProps {
   theme: ThemeName;
   onThemeChange: (t: ThemeName) => void;
   locale?: Locale;
+  manifestConsent?: boolean;
+  onManifestConsentChange?: (enabled: boolean) => void;
+  onSyncManifests?: () => void;
+  manifestSyncing?: boolean;
 }
 
 interface ToggleProps {
@@ -69,7 +73,16 @@ function Toggle({ initial = false, onChange }: ToggleProps) {
   );
 }
 
-export default function SettingsTab({ active, theme, onThemeChange, locale = "en" }: SettingsTabProps) {
+export default function SettingsTab({
+  active,
+  theme,
+  onThemeChange,
+  locale = "en",
+  manifestConsent = true,
+  onManifestConsentChange,
+  onSyncManifests,
+  manifestSyncing = false,
+}: SettingsTabProps) {
   // G2: persisted settings — load on mount, save on change.
   const [settings, setSettings] = useState<AppSettings | null>(null);
   // A1: SDK log path (empty string = not connected yet).
@@ -194,6 +207,40 @@ export default function SettingsTab({ active, theme, onThemeChange, locale = "en
               <span className="hotkey-display">Shift + F5</span>
             </div>
           </div>
+        </div>
+
+        {/* Manifest Sharing (opt-out consent) */}
+        <div className="settings-group">
+          <div className="group-title">📋 {t("settings.manifestSharing", locale)}</div>
+          <div className="setting-row">
+            <div>
+              <div className="label">{t("settings.shareManifests", locale)}</div>
+              <div className="desc">{t("settings.shareManifestsDesc", locale)}</div>
+            </div>
+            <div className="control">
+              <Toggle
+                initial={manifestConsent}
+                onChange={(on) => onManifestConsentChange?.(on)}
+              />
+            </div>
+          </div>
+          {manifestConsent && (
+            <div className="setting-row">
+              <div>
+                <div className="label">{t("settings.syncManifests", locale)}</div>
+                <div className="desc">{t("settings.syncManifestsDesc", locale)}</div>
+              </div>
+              <div className="control">
+                <button
+                  className="setting-select"
+                  disabled={manifestSyncing}
+                  onClick={() => onSyncManifests?.()}
+                >
+                  {manifestSyncing ? "…" : t("settings.syncManifests", locale)}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Logging (unified: ScreamAPI.log + SDK log) */}

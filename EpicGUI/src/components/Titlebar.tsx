@@ -72,7 +72,19 @@ export default function Titlebar({
 
   return (
     <div className="titlebar" data-tauri-drag-region>
-      {/* Left: language toggle */}
+      {/* Theme toggle */}
+      <div
+        className="theme-toggle"
+        title={t("titlebar.cycleThemes", locale)}
+        onClick={onCycleTheme}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onCycleTheme(); } }}
+      >
+        {themeIcon}
+      </div>
+
+      {/* Language toggle */}
       <div
         className="titlebar-btn"
         title={t("lang.toggle", locale)}
@@ -86,18 +98,6 @@ export default function Titlebar({
         <span style={{ fontSize: "10px", marginLeft: "2px", opacity: 0.8 }}>
           {locale === "en" ? "EN" : "AR"}
         </span>
-      </div>
-
-      {/* Theme toggle */}
-      <div
-        className="theme-toggle"
-        title={t("titlebar.cycleThemes", locale)}
-        onClick={onCycleTheme}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onCycleTheme(); } }}
-      >
-        {themeIcon}
       </div>
 
       {/* Music toggle */}

@@ -82,8 +82,8 @@ export default function UnlockAllModal({
           {/* Warning Box – uniform border, no top stripe, site names plain bold */}
           <div
             style={{
-              backgroundColor: "#fff0f0",
-              border: "2px solid #c62828",
+              backgroundColor: "var(--accent-dim)",
+              border: "2px solid var(--red)",
               borderRadius: "8px",
               padding: "16px",
               margin: "16px 0",
@@ -101,7 +101,7 @@ export default function UnlockAllModal({
               <span style={{ fontSize: "28px", lineHeight: 1 }}>⛔</span>
               <strong
                 style={{
-                  color: "#b71c1c",
+                  color: "var(--red)",
                   fontSize: "18px",
                   letterSpacing: "0.5px",
                 }}
@@ -109,9 +109,9 @@ export default function UnlockAllModal({
                 {t("modal.dangerTitle", locale)}
               </strong>
             </div>
-            <p style={{ margin: 0, color: "#6d1a1a", fontSize: "15px" }}>
+            <p style={{ margin: 0, color: "var(--text)", fontSize: "15px" }}>
               {t("modal.dangerBody", locale)}{" "}
-              <strong style={{ color: "#b71c1c" }}>Exophase</strong> {t("modal.dangerOr", locale)} <strong style={{ color: "#b71c1c" }}>TrueAchievements</strong>.
+              <strong style={{ color: "var(--red)" }}>Exophase</strong> {t("modal.dangerOr", locale)} <strong style={{ color: "var(--red)" }}>TrueAchievements</strong>
               {t("modal.dangerMarked", locale)}{" "}
               {t("modal.dangerBanned", locale)}
             </p>

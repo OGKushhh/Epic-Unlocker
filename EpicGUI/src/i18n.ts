@@ -156,7 +156,7 @@ const strings: Record<string, Record<Locale, string>> = {
   "modal.dangerTitle": { en: "DANGER: Account Warning", ar: "خطر: تحذير الحساب" },
   "modal.dangerBody": { en: "Using this on a legitimate Epic Games account may flag your profile on achievement tracking sites like", ar: "استخدام هذا على حساب Epic Games حقيقي قد يضع علامة على ملفك الشخصي في مواقع تتبع الإنجازات مثل" },
   "modal.dangerOr": { en: "or", ar: "أو" },
-  "modal.dangerMarked": { en: '"cheater"', ar: '"غشاش"' },
+  "modal.dangerMarked": { en: "as a \"cheater\"", ar: "كـ \"غشاش\"" },
   "modal.dangerBanned": { en: "or banned from leaderboards.", ar: "أو حظر من لوحات المتصدرين." },
   "modal.areYouSure": { en: "Are you sure you want to proceed?", ar: "هل أنت متأكد أنك تريد المتابعة؟" },
   "modal.cancel": { en: "Cancel", ar: "إلغاء" },
@@ -227,6 +227,28 @@ const strings: Record<string, Record<Locale, string>> = {
   "toast.logCleared": { en: "Log cleared", ar: "تم مسح السجل" },
   "toast.logClearedBody": { en: "ScreamAPI.log wiped on disk.", ar: "تم مسح ScreamAPI.log على القرص." },
   "toast.couldNotOpenLog": { en: "Could not open log", ar: "لم يمكن فتح السجل" },
+
+  // Manifest sharing consent
+  "consent.title": { en: "Help Build the Manifest Database", ar: "ساعد في بناء قاعدة بيانات البيانات" },
+  "consent.body": { en: "Help build a public game manifest database for Epic Games by anonymously sharing your game files. No personal data is sent. You can disable this anytime in Settings.", ar: "ساعد في بناء قاعدة بيانات عامة لبيانات ألعاب Epic من خلال مشاركة ملفات ألعابك بشكل مجهول. لا يتم إرسال بيانات شخصية. يمكنك تعطيل هذا في أي وقت من الإعدادات." },
+  "consent.accept": { en: "OK, got it", ar: "حسناً، فهمت" },
+  "consent.decline": { en: "Disable", ar: "تعطيل" },
+
+  // Manifest sharing settings
+  "settings.manifestSharing": { en: "Manifest Sharing", ar: "مشاركة البيانات" },
+  "settings.shareManifests": { en: "Share anonymous manifests", ar: "مشاركة البيانات بشكل مجهول" },
+  "settings.shareManifestsDesc": { en: "Upload game manifests to the public database. No personal data is included.", ar: "رفع بيانات الألعاب إلى قاعدة البيانات العامة. لا تتضمن بيانات شخصية." },
+  "settings.syncManifests": { en: "Sync Now", ar: "مزامنة الآن" },
+  "settings.syncManifestsDesc": { en: "Scan and upload any new manifests", ar: "فحص ورفع أي بيانات جديدة" },
+
+  // Manifest toast messages
+  "toast.manifestScanning": { en: "Scanning manifests…", ar: "جاري فحص البيانات…" },
+  "toast.manifestScanFound": { en: "Found {count} manifest(s)", ar: "تم العثور على {count} بيانات" },
+  "toast.manifestUploading": { en: "Uploading manifests…", ar: "جاري رفع البيانات…" },
+  "toast.manifestUploadDone": { en: "{count} manifest(s) uploaded", ar: "تم رفع {count} بيانات" },
+  "toast.manifestUploadSkipped": { en: "All manifests already synced", ar: "جميع البيانات متزامنة بالفعل" },
+  "toast.manifestUploadFailed": { en: "Manifest upload failed", ar: "فشل رفع البيانات" },
+  "toast.manifestNoConsent": { en: "Manifest sharing is disabled", ar: "مشاركة البيانات معطلة" },
 };
 
 export function t(key: string, locale: Locale): string {

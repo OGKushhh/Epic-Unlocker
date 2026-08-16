@@ -12,6 +12,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Default for `manifest_consent` — true because this is an opt-out model.
+/// Needed as a named function for `#[serde(default = "...")]` since
+/// `bool`'s Default is `false`, but we want `true`.
+fn default_manifest_consent() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -26,6 +33,19 @@ pub struct AppSettings {
     /// Maximum number of log lines retained in the in-memory display buffer.
     /// Default 20000. Older lines are dropped (matching LOG_MAX_LINES).
     pub max_log_lines: u32,
+
+    /// Whether the user has consented to manifest uploads.
+    /// Default true — opt-out model.
+    #[serde(default = "default_manifest_consent")]
+    pub manifest_consent: bool,
+
+    /// Whether the one-time consent modal has been dismissed.
+    /// Default false — modal shows on first launch.
+    /// On "OK, got it": consent=true, dismissed=true (never shows again).
+    /// On "Disable": consent=false, dismissed=false (gate re-shows every launch).
+    /// When consent is toggled to false in Settings: dismissed=false (modal shows again).
+    #[serde(default)]
+    pub manifest_consent_dismissed: bool,
 }
 
 impl Default for AppSettings {
@@ -34,6 +54,8 @@ impl Default for AppSettings {
             auto_refresh_interval_ms: 2000,
             connect_on_launch: true,
             max_log_lines: 20000,
+            manifest_consent: true,
+            manifest_consent_dismissed: false,
         }
     }
 }

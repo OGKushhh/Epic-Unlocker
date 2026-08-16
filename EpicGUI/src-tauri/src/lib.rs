@@ -3,6 +3,7 @@
 
 mod commands;
 mod dlc_log_parser;
+mod manifest;
 mod pipe_client;
 mod pipe_protocol;
 mod rarity;
@@ -81,6 +82,12 @@ pub fn run() {
             commands::get_game_info,
             commands::fetch_achievement_rarity,
             commands::clear_icon_cache,
+            // Manifest scanning & upload
+            commands::scan_manifests,
+            commands::upload_manifests,
+            commands::get_uploaded_manifest_hashes,
+            commands::get_manifest_consent,
+            commands::set_manifest_consent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

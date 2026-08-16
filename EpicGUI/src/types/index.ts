@@ -81,4 +81,30 @@ export interface AppSettings {
   connectOnLaunch: boolean;
   /** Maximum number of log lines retained in the in-memory display buffer. */
   maxLogLines: number;
+  /** Whether manifest sharing is enabled (opt-out: default true). */
+  manifestConsent: boolean;
+  /** Whether the one-time consent modal has been dismissed. */
+  manifestConsentDismissed: boolean;
+}
+
+/** Scanned Epic manifest file from disk. No parsing — just file metadata + hash. */
+export interface ScannedManifest {
+  fileName: string;
+  sha256: string;
+  fileSize: number;
+  filePath: string;
+}
+
+/** Result of uploading a single manifest. */
+export interface ManifestUploadResult {
+  fileName: string;
+  status: "ok" | "skipped" | "error";
+  detail: string | null;
+  serverResponse?: Record<string, unknown>;
+}
+
+/** Manifest consent state. */
+export interface ManifestConsentState {
+  consent: boolean;
+  dismissed: boolean;
 }

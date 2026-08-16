@@ -13,6 +13,9 @@ import type {
   LogTail,
   AppSettings,
   GameInfo,
+  ScannedManifest,
+  ManifestUploadResult,
+  ManifestConsentState,
 } from "@/types";
 
 // ── Connection ──────────────────────────────────────────────────────────────
@@ -117,3 +120,19 @@ export const fetchAchievementRarity = (): Promise<number> =>
 // Next Fetch Icons call will re-download everything from scratch.
 export const clearIconCache = (): Promise<number> =>
   invoke("clear_icon_cache");
+
+// ── Manifest Sharing ──────────────────────────────────────────────────────────
+export const scanManifests = (): Promise<ScannedManifest[]> =>
+  invoke("scan_manifests");
+
+export const uploadManifests = (files: string[]): Promise<ManifestUploadResult[]> =>
+  invoke("upload_manifests", { files });
+
+export const getUploadedManifestHashes = (): Promise<string[]> =>
+  invoke("get_uploaded_manifest_hashes");
+
+export const getManifestConsent = (): Promise<ManifestConsentState> =>
+  invoke("get_manifest_consent");
+
+export const setManifestConsent = (consent: boolean, dismissed: boolean): Promise<void> =>
+  invoke("set_manifest_consent", { consent, dismissed });

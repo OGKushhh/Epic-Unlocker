@@ -29,9 +29,11 @@ import { useToasts } from "./hooks/useToasts";
 import { useTheme } from "./hooks/useTheme";
 import { useMusic } from "./hooks/useMusic";
 import { useGameData } from "./hooks/useGameData";
+import { useManifestSync } from "./hooks/useManifestSync";
 import { achievementEmojis, type Achievement } from "./data/mockupData";
 import { clearLog, openLogExternally } from "./lib/api";
 import { t, isRTL, type Locale } from "./i18n";
+import ConsentGate from "./components/ConsentGate";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("ach");
@@ -48,6 +50,19 @@ export default function App() {
   const { theme, setTheme, cycleTheme, icon: themeIcon } = useTheme();
   const { playing: musicPlaying, volume, muted, togglePlay, setVolume, toggleMute } = useMusic();
   const [locale, setLocale] = useState<Locale>("en");
+
+  // Manifest sharing consent + sync
+  const {
+    consentState,
+    syncing: manifestSyncing,
+    syncManifests,
+    acceptConsent,
+    declineConsent,
+    toggleConsent,
+  } = useManifestSync({ locale, showToast });
+
+  // Show consent modal when not dismissed (on decline: re-shows every launch)
+  const showConsentGate = !consentState.dismissed;
 
   // Localized stat-gated tooltip content
   const STAT_GATED_TITLE = t("tooltip.statGatedTitle", locale);
@@ -360,6 +375,10 @@ export default function App() {
               theme={theme}
               onThemeChange={setTheme}
               locale={locale}
+              manifestConsent={consentState.consent}
+              onManifestConsentChange={toggleConsent}
+              onSyncManifests={syncManifests}
+              manifestSyncing={manifestSyncing}
             />
 
             <Statusbar
@@ -378,6 +397,13 @@ export default function App() {
         onClose={() => setModalOpen(false)}
         onConfirm={handleConfirmUnlockAll}
         totalCount={achievements.length}
+        locale={locale}
+      />
+
+      <ConsentGate
+        open={showConsentGate}
+        onAccept={acceptConsent}
+        onDecline={declineConsent}
         locale={locale}
       />
 
