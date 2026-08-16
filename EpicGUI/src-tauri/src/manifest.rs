@@ -5,15 +5,29 @@
 // then also includes the binary .manifest files they reference.
 // Both .item (JSON) and .manifest (binary) are uploaded — server parses each type.
 //
+// Smart uploader:
+//   - ≤100MB total → batch (current behavior)
+//   - >100MB total → sequential with 2s delay between uploads
+//   - Single file >100MB → chunked upload (10MB chunks via /api/manifest/upload/chunk)
+//   - Server auto-completes on last chunk — no separate /complete endpoint needed
+//   - Progress events emitted to frontend via Tauri events
+//
 // - Local dedup via SHA256 hash cache (uploaded_manifests.json)
-// - Server-side dedup via GET /api/manifest/list (hash-based)
 // - API key embedded in binary at build time from MANIFEST_API_KEY.txt
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+// ── Constants ──────────────────────────────────────────────────────────────
+
+const MANIFEST_API_BASE_URL: &str = "https://ogkushhh-abdobest.hf.space";
+const BATCH_SIZE_LIMIT: u64 = 100 * 1024 * 1024; // 100MB
+const CHUNK_SIZE: usize = 10 * 1024 * 1024; // 10MB chunks
+const UPLOAD_DELAY_SECS: u64 = 2; // delay between sequential uploads
+const MAX_RETRIES: u32 = 3;
 
 // ── API Key ────────────────────────────────────────────────────────────────
 // The key is read from MANIFEST_API_KEY.txt at BUILD TIME by build.rs and
@@ -32,9 +46,6 @@ fn get_api_key() -> Option<&'static str> {
         Some(API_KEY)
     }
 }
-
-const MANIFEST_API_BASE_URL: &str = "https://ogkushhh-abdobest.hf.space";
-// const MAX_RETRIES: u32 = 3; // unused after removing upload_single_with_retry
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -66,6 +77,18 @@ pub struct ManifestUploadResult {
 pub struct ManifestConsentState {
     pub consent: bool,     // whether uploads are enabled
     pub dismissed: bool,   // whether the one-time modal was dismissed
+}
+
+/// Progress update emitted to the frontend via Tauri event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadProgress {
+    pub total_files: u32,
+    pub completed_files: u32,
+    pub current_file: String,
+    pub current_file_percent: u32,  // 0-100 for current file (chunk progress)
+    pub overall_percent: u32,       // 0-100 overall
+    pub status: String,             // "scanning" | "uploading" | "chunking" | "done" | "error"
 }
 
 // ── Directory scanning ──────────────────────────────────────────────────────
@@ -195,7 +218,7 @@ pub fn scan_manifests_on_disk() -> Vec<ScannedManifest> {
                     "[manifest] Binary manifest not found for .item: {} — skipping orphaned .item",
                     file_name
                 );
-                continue; // ← SKIP the entire .item
+                continue;
             }
 
             // ── Valid: binary manifest exists ──────────────────────────────
@@ -279,21 +302,308 @@ pub fn scan_manifests_on_disk() -> Vec<ScannedManifest> {
     results
 }
 
-// ── Server-side dedup ───────────────────────────────────────────────────────
-// NOTE: fetch_server_hashes was removed — the new upload_manifests_to_api does
-// local-hash dedup only. Server-side dedup can be re-added if needed later.
+// ── Progress helper ─────────────────────────────────────────────────────────
 
-// ── Upload with retry ───────────────────────────────────────────────────────
-// NOTE: upload_single_with_retry was removed — the new upload_manifests_to_api
-// does direct upload with println! debug logging at every step. Retry logic
-// can be re-added inside upload_manifests_to_api if needed later.
+/// Emit a progress event to the frontend.
+fn emit_progress(app: &tauri::AppHandle, progress: &UploadProgress) {
+    let _ = app.emit("manifest-upload-progress", progress);
+    log::info!(
+        "[manifest] Progress: {}/{} files, {}% overall — {} ({})",
+        progress.completed_files,
+        progress.total_files,
+        progress.overall_percent,
+        progress.current_file,
+        progress.status
+    );
+}
 
-// ── Orchestrate uploads ─────────────────────────────────────────────────────
+// ── Single file upload (with retry) ────────────────────────────────────────
 
-/// Upload the given manifest files to the API.
-/// Uses local hash dedup and server-side hash dedup.
-/// Retries failed uploads with exponential backoff.
-/// On success, hashes are recorded in uploaded_manifests.json.
+/// Upload a single file to the API with exponential backoff retry.
+async fn upload_single_file(
+    client: &reqwest::Client,
+    api_key: &str,
+    file_path: &Path,
+) -> ManifestUploadResult {
+    let file_name = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let contents = match std::fs::read(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return ManifestUploadResult {
+                file_name,
+                status: "error".to_string(),
+                detail: Some(format!("Read error: {}", e)),
+                server_response: None,
+            };
+        }
+    };
+
+    let url = format!("{}/api/manifest/upload", MANIFEST_API_BASE_URL);
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = std::time::Duration::from_millis(500 * 2u64.pow(attempt - 1));
+            log::info!("[manifest] Retry {} for {} (waiting {:?})", attempt, file_name, delay);
+            tokio::time::sleep(delay).await;
+        }
+
+        let part = reqwest::multipart::Part::bytes(contents.clone())
+            .file_name(file_name.clone())
+            .mime_str("application/octet-stream")
+            .unwrap_or_else(|_| {
+                reqwest::multipart::Part::bytes(contents.clone())
+                    .file_name(file_name.clone())
+            });
+        let form = reqwest::multipart::Form::new().part("file", part);
+
+        match client
+            .post(&url)
+            .header("X-API-Key", api_key)
+            .multipart(form)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+
+                if status.is_success() {
+                    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                    return ManifestUploadResult {
+                        file_name: file_name.clone(),
+                        status: "ok".to_string(),
+                        detail: Some("Uploaded successfully".to_string()),
+                        server_response: Some(json),
+                    };
+                } else if status.is_client_error() {
+                    // 4xx — not retryable
+                    return ManifestUploadResult {
+                        file_name: file_name.clone(),
+                        status: "error".to_string(),
+                        detail: Some(format!("HTTP {}: {}", status, body)),
+                        server_response: None,
+                    };
+                } else {
+                    // 5xx — retryable
+                    log::warn!("[manifest] Upload {} got HTTP {} (attempt {}/{})", file_name, status, attempt + 1, MAX_RETRIES + 1);
+                    if attempt == MAX_RETRIES {
+                        return ManifestUploadResult {
+                            file_name: file_name.clone(),
+                            status: "error".to_string(),
+                            detail: Some(format!("HTTP {} after {} attempts", status, MAX_RETRIES + 1)),
+                            server_response: None,
+                        };
+                    }
+                    continue;
+                }
+            }
+            Err(e) => {
+                log::warn!("[manifest] Upload {} network error (attempt {}/{}): {}", file_name, attempt + 1, MAX_RETRIES + 1, e);
+                if attempt == MAX_RETRIES {
+                    return ManifestUploadResult {
+                        file_name: file_name.clone(),
+                        status: "error".to_string(),
+                        detail: Some(format!("Network error after {} attempts: {}", MAX_RETRIES + 1, e)),
+                        server_response: None,
+                    };
+                }
+                continue;
+            }
+        }
+    }
+
+    ManifestUploadResult {
+        file_name,
+        status: "error".to_string(),
+        detail: Some("Exhausted all retries".to_string()),
+        server_response: None,
+    }
+}
+
+// ── Chunked upload ──────────────────────────────────────────────────────────
+
+/// Upload a large file (>100MB) in chunks.
+/// Each chunk is sent to POST /api/manifest/upload/chunk.
+/// The server automatically completes and reassembles the file when the
+/// last chunk arrives (chunkIndex == totalChunks - 1), so no separate
+/// /complete endpoint call is needed.
+async fn upload_file_in_chunks(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    api_key: &str,
+    file_path: &Path,
+    file_idx: u32,
+    total_files: u32,
+) -> Result<Vec<ManifestUploadResult>, String> {
+    let file_name = file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let contents = match std::fs::read(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(vec![ManifestUploadResult {
+                file_name,
+                status: "error".to_string(),
+                detail: Some(format!("Read error: {}", e)),
+                server_response: None,
+            }]);
+        }
+    };
+
+    let file_hash = sha256_hex(&contents);
+    let total_chunks = (contents.len() + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    let chunk_url = format!("{}/api/manifest/upload/chunk", MANIFEST_API_BASE_URL);
+
+    log::info!(
+        "[manifest] Chunking {} ({} bytes → {} chunks of {}MB)",
+        file_name,
+        contents.len(),
+        total_chunks,
+        CHUNK_SIZE / (1024 * 1024)
+    );
+
+    // Track the last chunk's server response (contains completion info)
+    let mut last_response: Option<serde_json::Value> = None;
+
+    for (chunk_idx, chunk_start) in (0..contents.len()).step_by(CHUNK_SIZE).enumerate() {
+        let chunk_end = std::cmp::min(chunk_start + CHUNK_SIZE, contents.len());
+        let chunk_data = &contents[chunk_start..chunk_end];
+        let chunk_hash = sha256_hex(chunk_data);
+        let is_last = chunk_idx == total_chunks - 1;
+
+        // Progress for this chunk
+        let chunk_percent = ((chunk_idx as f32 / total_chunks as f32) * 100.0) as u32;
+        let overall_base = ((file_idx as f32 / total_files as f32) * 100.0) as u32;
+        let overall_next = (((file_idx + 1) as f32 / total_files as f32) * 100.0) as u32;
+        let overall_percent = overall_base + ((overall_next - overall_base) * chunk_percent / 100);
+
+        emit_progress(app, &UploadProgress {
+            total_files,
+            completed_files: file_idx,
+            current_file: format!("{} (chunk {}/{})", file_name, chunk_idx + 1, total_chunks),
+            current_file_percent: chunk_percent,
+            overall_percent,
+            status: if is_last { "uploading".to_string() } else { "chunking".to_string() },
+        });
+
+        // ── Upload chunk with retry (exponential backoff) ────────────
+        let mut attempt: u32 = 0;
+        loop {
+            // Build multipart form for chunk (must be inside loop — Form is consumed by send)
+            let part = reqwest::multipart::Part::bytes(chunk_data.to_vec())
+                .file_name(format!("{}_chunk_{}", file_name, chunk_idx))
+                .mime_str("application/octet-stream")
+                .unwrap_or_else(|_| {
+                    reqwest::multipart::Part::bytes(chunk_data.to_vec())
+                        .file_name(format!("{}_chunk_{}", file_name, chunk_idx))
+                });
+            let form = reqwest::multipart::Form::new()
+                .part("chunk", part)
+                .text("fileHash", file_hash.clone())
+                .text("fileName", file_name.clone())
+                .text("chunkIndex", chunk_idx.to_string())
+                .text("totalChunks", total_chunks.to_string())
+                .text("chunkHash", chunk_hash.clone());
+
+            match client
+                .post(&chunk_url)
+                .header("X-API-Key", api_key)
+                .multipart(form)
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    if status.is_success() {
+                        let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                        if is_last {
+                            log::info!(
+                                "[manifest] Last chunk uploaded for {} — server auto-completed",
+                                file_name
+                            );
+                            last_response = Some(json);
+                        } else {
+                            log::info!(
+                                "[manifest] Chunk {}/{} uploaded for {}",
+                                chunk_idx + 1,
+                                total_chunks,
+                                file_name
+                            );
+                        }
+                        break; // chunk succeeded
+                    } else if status.is_client_error() {
+                        // 4xx — not retryable
+                        log::warn!("[manifest] Chunk {} for {} got 4xx HTTP {} — not retryable", chunk_idx, file_name, status);
+                        return Ok(vec![ManifestUploadResult {
+                            file_name: file_name.clone(),
+                            status: "error".to_string(),
+                            detail: Some(format!("Chunk {} upload failed: HTTP {} — {}", chunk_idx, status, body)),
+                            server_response: None,
+                        }]);
+                    } else {
+                        // 5xx — retryable
+                        attempt += 1;
+                        if attempt >= MAX_RETRIES {
+                            log::warn!("[manifest] Chunk {} for {} failed after {} attempts (HTTP {})", chunk_idx, file_name, attempt, status);
+                            return Ok(vec![ManifestUploadResult {
+                                file_name: file_name.clone(),
+                                status: "error".to_string(),
+                                detail: Some(format!("Chunk {} failed after {} attempts: HTTP {}", chunk_idx, attempt, status)),
+                                server_response: None,
+                            }]);
+                        }
+                        let delay = std::time::Duration::from_millis(500 * 2u64.pow(attempt - 1));
+                        log::warn!(
+                            "[manifest] Chunk {} for {} got HTTP {} — retry {}/{} in {:?}",
+                            chunk_idx, file_name, status, attempt, MAX_RETRIES, delay
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= MAX_RETRIES {
+                        log::warn!("[manifest] Chunk {} for {} network error after {} attempts: {}", chunk_idx, file_name, attempt, e);
+                        return Ok(vec![ManifestUploadResult {
+                            file_name: file_name.clone(),
+                            status: "error".to_string(),
+                            detail: Some(format!("Chunk {} network error after {} attempts: {}", chunk_idx, attempt, e)),
+                            server_response: None,
+                        }]);
+                    }
+                    let delay = std::time::Duration::from_millis(500 * 2u64.pow(attempt - 1));
+                    log::warn!(
+                        "[manifest] Chunk {} for {} network error — retry {}/{} in {:?}: {}",
+                        chunk_idx, file_name, attempt, MAX_RETRIES, delay, e
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    }
+
+    // ── All chunks uploaded — server auto-completed on last chunk ────────
+    Ok(vec![ManifestUploadResult {
+        file_name: file_name.clone(),
+        status: "ok".to_string(),
+        detail: Some(format!("Uploaded in {} chunks (auto-completed)", total_chunks)),
+        server_response: last_response,
+    }])
+}
+
+// ── Smart upload orchestration ──────────────────────────────────────────────
+
+/// Smart upload: decides batch vs sequential vs chunked based on file sizes.
+/// Emits `manifest-upload-progress` Tauri events for UI progress display.
 pub async fn upload_manifests_to_api(
     app: &tauri::AppHandle,
     files: &[String],
@@ -333,18 +643,14 @@ pub async fn upload_manifests_to_api(
         }
     };
 
-    let mut results = Vec::new();
-    let mut newly_uploaded_hashes = Vec::new();
+    // ── 4. COLLECT FILE SIZES & FILTER DEDUPED ──────────────────────────
+    let mut pending: Vec<(String, u64)> = Vec::new(); // (path, size)
+    let mut skipped_results: Vec<ManifestUploadResult> = Vec::new();
 
-    // ── 4. LOOP THROUGH FILES ────────────────────────────────────────────
-    for (idx, file_path_str) in files.iter().enumerate() {
-        println!("─────────────────────────────────────────────────────────");
-        println!("📄 Processing file {}/{}: {}", idx + 1, files.len(), file_path_str);
-
+    for file_path_str in files {
         let path = Path::new(file_path_str);
         if !path.exists() {
-            println!("❌ File does NOT exist!");
-            results.push(ManifestUploadResult {
+            skipped_results.push(ManifestUploadResult {
                 file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
                 status: "error".to_string(),
                 detail: Some("File not found".to_string()),
@@ -352,16 +658,11 @@ pub async fn upload_manifests_to_api(
             });
             continue;
         }
-        println!("✅ File exists");
 
         let contents = match std::fs::read(path) {
-            Ok(c) => {
-                println!("✅ Read {} bytes", c.len());
-                c
-            }
+            Ok(c) => c,
             Err(e) => {
-                println!("❌ Failed to read file: {}", e);
-                results.push(ManifestUploadResult {
+                skipped_results.push(ManifestUploadResult {
                     file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
                     status: "error".to_string(),
                     detail: Some(format!("Read error: {}", e)),
@@ -372,11 +673,8 @@ pub async fn upload_manifests_to_api(
         };
 
         let hash = sha256_hex(&contents);
-        println!("🔑 SHA256: {}", hash);
-
         if already_uploaded.contains(&hash) {
-            println!("⏭️ Skipping – already uploaded locally");
-            results.push(ManifestUploadResult {
+            skipped_results.push(ManifestUploadResult {
                 file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
                 status: "skipped".to_string(),
                 detail: Some("Already uploaded (local cache)".to_string()),
@@ -385,73 +683,111 @@ pub async fn upload_manifests_to_api(
             continue;
         }
 
-        // ── 5. UPLOAD ──────────────────────────────────────────────────────
-        let url = format!("{}/api/manifest/upload", MANIFEST_API_BASE_URL);
-        println!("🌐 POST to: {}", url);
+        let size = contents.len() as u64;
+        pending.push((file_path_str.clone(), size));
+    }
 
-        let part = match reqwest::multipart::Part::bytes(contents.clone())
-            .file_name(path.file_name().unwrap_or_default().to_string_lossy().to_string())
-            .mime_str("application/octet-stream") {
-                Ok(p) => p,
-                Err(e) => {
-                    println!("❌ Failed to create multipart: {}", e);
-                    results.push(ManifestUploadResult {
-                        file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        status: "error".to_string(),
-                        detail: Some(format!("Multipart error: {}", e)),
-                        server_response: None,
-                    });
-                    continue;
-                }
-            };
-        let form = reqwest::multipart::Form::new().part("file", part);
+    if pending.is_empty() {
+        println!("📋 No new files to upload (all deduped or errored)");
+        return Ok(skipped_results);
+    }
 
-        println!("📤 Sending request...");
-        match client
-            .post(&url)
-            .header("X-API-Key", api_key)
-            .multipart(form)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let status = resp.status();
-                let body = match resp.text().await {
-                    Ok(t) => t,
-                    Err(e) => {
-                        println!("❌ Failed to read response body: {}", e);
-                        "".to_string()
-                    }
-                };
-                println!("📊 Status: {}", status);
-                println!("📄 Body: {}", body);
+    // ── 5. DECIDE STRATEGY ──────────────────────────────────────────────
+    let total_size: u64 = pending.iter().map(|(_, s)| s).sum();
+    let total_files = pending.len() as u32;
+    println!("📊 Pending: {} files, {} bytes total", pending.len(), total_size);
 
-                if status.is_success() {
-                    newly_uploaded_hashes.push(hash);
-                    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-                    results.push(ManifestUploadResult {
-                        file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        status: "ok".to_string(),
-                        detail: Some("Uploaded successfully".to_string()),
-                        server_response: Some(json),
-                    });
-                } else {
-                    results.push(ManifestUploadResult {
-                        file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                        status: "error".to_string(),
-                        detail: Some(format!("Server error {}: {}", status, body)),
-                        server_response: None,
-                    });
+    let use_batch = total_size <= BATCH_SIZE_LIMIT && pending.len() <= 10;
+
+    let mut results = skipped_results;
+    let mut newly_uploaded_hashes = Vec::new();
+
+    if use_batch {
+        // ── BATCH MODE (current behavior) ────────────────────────────────
+        println!("📦 BATCH mode ({} files, {} bytes)", pending.len(), total_size);
+        emit_progress(app, &UploadProgress {
+            total_files,
+            completed_files: 0,
+            current_file: "Uploading batch…".to_string(),
+            current_file_percent: 0,
+            overall_percent: 0,
+            status: "uploading".to_string(),
+        });
+
+        for (idx, (file_path_str, _)) in pending.iter().enumerate() {
+            let path = Path::new(file_path_str);
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+
+            emit_progress(app, &UploadProgress {
+                total_files,
+                completed_files: idx as u32,
+                current_file: file_name.clone(),
+                current_file_percent: 0,
+                overall_percent: ((idx as f32 / total_files as f32) * 100.0) as u32,
+                status: "uploading".to_string(),
+            });
+
+            let result = upload_single_file(&client, api_key, path).await;
+            if result.status == "ok" {
+                // Re-hash to record
+                if let Ok(c) = std::fs::read(path) {
+                    newly_uploaded_hashes.push(sha256_hex(&c));
                 }
             }
-            Err(e) => {
-                println!("❌ Request failed: {}", e);
-                results.push(ManifestUploadResult {
-                    file_name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                    status: "error".to_string(),
-                    detail: Some(format!("Network error: {}", e)),
-                    server_response: None,
-                });
+
+            emit_progress(app, &UploadProgress {
+                total_files,
+                completed_files: (idx + 1) as u32,
+                current_file: file_name,
+                current_file_percent: 100,
+                overall_percent: (((idx + 1) as f32 / total_files as f32) * 100.0) as u32,
+                status: "uploading".to_string(),
+            });
+
+            results.push(result);
+        }
+    } else {
+        // ── SEQUENTIAL MODE (with delay + chunking for large files) ──────
+        println!("📤 SEQUENTIAL mode ({} files, {} bytes)", pending.len(), total_size);
+
+        for (idx, (file_path_str, file_size)) in pending.iter().enumerate() {
+            let path = Path::new(file_path_str);
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+
+            emit_progress(app, &UploadProgress {
+                total_files,
+                completed_files: idx as u32,
+                current_file: file_name.clone(),
+                current_file_percent: 0,
+                overall_percent: ((idx as f32 / total_files as f32) * 100.0) as u32,
+                status: "uploading".to_string(),
+            });
+
+            let file_results = if *file_size > BATCH_SIZE_LIMIT {
+                // Chunk this large file
+                println!("🔪 Chunking {} ({} bytes > {} limit)", file_name, file_size, BATCH_SIZE_LIMIT);
+                upload_file_in_chunks(app, &client, api_key, path, idx as u32, total_files).await?
+            } else {
+                // Normal single upload
+                let result = upload_single_file(&client, api_key, path).await;
+                vec![result]
+            };
+
+            // Record hashes for successful uploads
+            for r in &file_results {
+                if r.status == "ok" {
+                    if let Ok(c) = std::fs::read(path) {
+                        newly_uploaded_hashes.push(sha256_hex(&c));
+                    }
+                }
+            }
+
+            results.extend(file_results);
+
+            // Delay between uploads (not after last)
+            if idx < pending.len() - 1 {
+                println!("⏳ Waiting {}s before next upload…", UPLOAD_DELAY_SECS);
+                tokio::time::sleep(std::time::Duration::from_secs(UPLOAD_DELAY_SECS)).await;
             }
         }
     }
@@ -466,6 +802,16 @@ pub async fn upload_manifests_to_api(
         }
     }
 
+    // ── 7. FINAL PROGRESS ──────────────────────────────────────────────────
+    emit_progress(app, &UploadProgress {
+        total_files,
+        completed_files: total_files,
+        current_file: "Done".to_string(),
+        current_file_percent: 100,
+        overall_percent: 100,
+        status: "done".to_string(),
+    });
+
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📋 Returning {} results", results.len());
     for r in &results {
@@ -479,7 +825,7 @@ pub async fn upload_manifests_to_api(
 // ── Upload tracking ─────────────────────────────────────────────────────────
 
 /// Returns the path to the uploaded_manifests.json file in the app local data dir.
-fn uploaded_hashes_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub fn uploaded_hashes_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_local_data_dir()

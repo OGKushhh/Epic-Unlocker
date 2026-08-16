@@ -5,11 +5,13 @@
  *   1. Check consent state from backend
  *   2. If consent=true, scan manifests on disk
  *   3. Filter out already-uploaded hashes
- *   4. Upload new manifests
- *   5. Toast feedback for each step
+ *   4. Upload new manifests (smart uploader: batch/sequential/chunked)
+ *   5. Listen to progress events from Rust
+ *   6. Toast feedback for each step
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   getManifestConsent,
   setManifestConsent,
@@ -19,6 +21,19 @@ import {
 } from "../lib/api";
 import type { ManifestConsentState, ScannedManifest } from "../types";
 import { t, type Locale } from "../i18n";
+
+// ── Progress type (mirrors Rust UploadProgress) ──────────────────────────────
+
+export interface UploadProgressEvent {
+  totalFiles: number;
+  completedFiles: number;
+  currentFile: string;
+  currentFilePercent: number; // 0-100 for current file
+  overallPercent: number;     // 0-100 overall
+  status: string;             // "uploading" | "chunking" | "done" | "error"
+}
+
+// ── Hook options ─────────────────────────────────────────────────────────────
 
 interface ManifestSyncOptions {
   locale?: Locale;
@@ -32,7 +47,24 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
   });
   const [syncing, setSyncing] = useState(false);
   const [scannedManifests, setScannedManifests] = useState<ScannedManifest[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressEvent | null>(null);
   const consentLoaded = useRef(false);
+
+  // ── Listen to progress events from Rust ────────────────────────────────
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    (async () => {
+      unlisten = await listen<UploadProgressEvent>("manifest-upload-progress", (event) => {
+        setUploadProgress(event.payload);
+        console.log("📊 Upload progress:", event.payload);
+      });
+    })();
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   // Load consent state on mount
   useEffect(() => {
@@ -56,6 +88,7 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
     console.log("🔍 syncManifests called");
     if (syncing) return;
     setSyncing(true);
+    setUploadProgress(null);
 
     try {
       // Check consent
@@ -96,7 +129,7 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
         return;
       }
 
-      // Upload — show per-file progress
+      // Upload — the Rust smart uploader emits progress events
       const total = newManifests.length;
       const filePaths = newManifests.map((m) => m.filePath);
       console.log("📤 Sending to Rust:", filePaths);
@@ -169,6 +202,7 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
     consentState,
     syncing,
     scannedManifests,
+    uploadProgress,
     syncManifests,
     acceptConsent,
     declineConsent,

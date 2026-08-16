@@ -88,6 +88,7 @@ pub fn run() {
             commands::get_uploaded_manifest_hashes,
             commands::get_manifest_consent,
             commands::set_manifest_consent,
+            commands::clear_manifest_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

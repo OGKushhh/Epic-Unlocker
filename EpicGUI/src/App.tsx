@@ -55,6 +55,7 @@ export default function App() {
   const {
     consentState,
     syncing: manifestSyncing,
+    uploadProgress: manifestProgress,
     syncManifests,
     acceptConsent,
     declineConsent,
@@ -351,6 +352,7 @@ export default function App() {
               onHoverRow={handleHoverRow}
               onHoverStatGated={handleHoverStatGated}
               onUnlockRow={handleUnlockRow}
+              showToast={showToast}
             />
             <DlcTab
               active={activeTab === "dlc"}
@@ -359,6 +361,7 @@ export default function App() {
               loading={loading}
               connected={connected}
               locale={locale}
+              showToast={showToast}
             />
             <LogTab
               active={activeTab === "log"}
@@ -369,6 +372,7 @@ export default function App() {
               locale={locale}
               onClear={handleClearLog}
               onOpenFile={handleOpenLogFile}
+              showToast={showToast}
             />
             <SettingsTab
               active={activeTab === "settings"}
@@ -379,6 +383,8 @@ export default function App() {
               onManifestConsentChange={toggleConsent}
               onSyncManifests={syncManifests}
               manifestSyncing={manifestSyncing}
+              manifestProgress={manifestProgress}
+              showToast={showToast}
             />
 
             <Statusbar

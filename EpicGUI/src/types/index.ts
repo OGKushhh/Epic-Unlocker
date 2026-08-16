@@ -108,3 +108,13 @@ export interface ManifestConsentState {
   consent: boolean;
   dismissed: boolean;
 }
+
+/** Upload progress event (mirrors Rust UploadProgress). */
+export interface UploadProgress {
+  totalFiles: number;
+  completedFiles: number;
+  currentFile: string;
+  currentFilePercent: number;
+  overallPercent: number;
+  status: string;
+}

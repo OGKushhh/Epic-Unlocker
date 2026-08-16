@@ -1023,3 +1023,20 @@ pub async fn set_manifest_consent(
 ) -> Result<(), String> {
     crate::manifest::set_consent_state(&app, consent, dismissed)
 }
+
+/// Clears the local manifest upload cache (`uploaded_manifests.json`).
+/// Returns the number of files deleted (0 if the file didn't exist, 1 if deleted).
+#[tauri::command]
+pub async fn clear_manifest_cache(
+    app: tauri::AppHandle,
+) -> Result<u32, String> {
+    let path = crate::manifest::uploaded_hashes_path(&app)?;
+    if !path.exists() {
+        log::info!("[clear_manifest_cache] No cache file to delete");
+        return Ok(0);
+    }
+    std::fs::remove_file(&path)
+        .map_err(|e| format!("Failed to delete cache file: {e}"))?;
+    log::info!("[clear_manifest_cache] Deleted: {:?}", path);
+    Ok(1)
+}

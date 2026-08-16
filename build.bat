@@ -73,15 +73,7 @@ if exist "%OUT_DIR%\" (
 )
 goto :eof
 
-:CHECK_REBUILD_GUI
-set "TARGET_FLAG=/t:Build"
-if exist "EpicGUI\bin\Release\" (
-    echo  [INFO] Output folder "EpicGUI\x64\Release" exists - using Rebuild
-    set "TARGET_FLAG=/t:Rebuild"
-) else (
-    echo  [INFO] Output folder "EpicGUI\x64\Release" not found - using Build
-)
-goto :eof
+:: Note: EpicGUI is now a Tauri+React app built via npm — no CHECK_REBUILD_GUI needed
 
 :: ── Targets ───────────────────────────────────────────────────────────────────
 :BUILD_X64
@@ -102,10 +94,17 @@ goto DONE
 
 :BUILD_GUI
 echo.
-echo  Building EpicGUI x64...
-call :CHECK_REBUILD_GUI
-call "%VCVARS%"
-msbuild EpicGUI\EpicGUI.vcxproj %TARGET_FLAG% /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
+echo  Building EpicGUI (Tauri + React)...
+echo  Running: npm run tauri build
+cd EpicGUI
+if not exist "node_modules" (
+    echo  [INFO] node_modules not found - running npm install first...
+    call npm install
+    if errorlevel 1 ( echo [ERROR] npm install failed. & cd .. & goto DONE )
+)
+call npm run tauri build
+if errorlevel 1 ( echo [ERROR] EpicGUI build failed. & cd .. & goto DONE )
+cd ..
 goto DONE
 
 :BUILD_ALL
@@ -121,8 +120,15 @@ call :CHECK_REBUILD_SLN x86
 msbuild ScreamAPI.sln %TARGET_FLAG% /p:Configuration=Release /p:Platform=x86 /p:PlatformToolset=v143 /m
 if errorlevel 1 ( echo [ERROR] x86 build failed. & goto DONE )
 
-call :CHECK_REBUILD_GUI
-msbuild EpicGUI\EpicGUI.vcxproj %TARGET_FLAG% /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /m
+echo  Building EpicGUI (Tauri + React)...
+cd EpicGUI
+if not exist "node_modules" (
+    echo  [INFO] node_modules not found - running npm install first...
+    call npm install
+)
+call npm run tauri build
+if errorlevel 1 ( echo [ERROR] EpicGUI build failed. & cd .. & goto DONE )
+cd ..
 goto DONE
 
 :DONE

@@ -129,6 +129,7 @@ interface AchievementsTabProps {
   onHoverRow: (ach: Achievement | null, e?: { clientX: number; clientY: number }) => void;
   onHoverStatGated: (e: { clientX: number; clientY: number }) => void;
   onUnlockRow: (ach: Achievement) => void;
+  showToast?: (title: string, body: string) => void;
 }
 
 export default function AchievementsTab({
@@ -141,6 +142,7 @@ export default function AchievementsTab({
   onHoverRow,
   onHoverStatGated,
   onUnlockRow,
+  showToast: _showToast,
 }: AchievementsTabProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterId>("all");

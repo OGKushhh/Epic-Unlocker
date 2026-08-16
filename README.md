@@ -154,6 +154,8 @@ LogFilename                   = ScreamAPI.log
 LogDLCQueries                 = True      ; Log DLC ownership/entitlement checks
 LogAchievementQueries         = True      ; Log achievement queries and unlocks
 LogOverlay                    = True      ; Log overlay (initialization, toggles, etc.)
+EnableSDKLog                  = False     ; Capture EOS SDK log to ScreamAPI_SDK.log? Default: False (SDK log is VERY chatty and can crash game startup at Verbose level)
+SDKLogLevel                   = Warning   ; Values: {Off, Fatal, Error, Warning, Info, Verbose, VeryVerbose}. Only used if EnableSDKLog=True. Default: Warning (Verbose/VeryVerbose will lag game startup)
 
 [Overlay]
 LoadIcons                     = False     ; Download achievement icons (True = download, False = no icons)

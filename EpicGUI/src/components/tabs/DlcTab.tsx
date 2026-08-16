@@ -21,6 +21,7 @@ interface DlcTabProps {
   loading?: boolean;
   connected?: boolean;
   locale?: Locale;
+  showToast?: (title: string, body: string) => void;
 }
 
 export default function DlcTab({
@@ -30,6 +31,7 @@ export default function DlcTab({
   loading = false,
   connected = false,
   locale = "en",
+  showToast: _showToast,
 }: DlcTabProps) {
   const data = dlc;
   const totalQueried = data.length;

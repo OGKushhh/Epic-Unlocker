@@ -17,7 +17,7 @@
  * user can launch it in their preferred editor without leaving the GUI.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ThemeName } from "../../hooks/useTheme";
 import {
   getSettings,
@@ -25,9 +25,11 @@ import {
   getSdkLogPath,
   openSdkLogExternally,
   openLogExternally,
+  clearManifestCache,
 } from "../../lib/api";
 import type { AppSettings } from "../../types";
 import { t, type Locale } from "../../i18n";
+import type { UploadProgressEvent } from "../../hooks/useManifestSync";
 
 interface SettingsTabProps {
   active: boolean;
@@ -38,6 +40,8 @@ interface SettingsTabProps {
   onManifestConsentChange?: (enabled: boolean) => void;
   onSyncManifests?: () => void;
   manifestSyncing?: boolean;
+  manifestProgress?: UploadProgressEvent | null;
+  showToast?: (title: string, body: string) => void;
 }
 
 interface ToggleProps {
@@ -82,6 +86,8 @@ export default function SettingsTab({
   onManifestConsentChange,
   onSyncManifests,
   manifestSyncing = false,
+  manifestProgress,
+  showToast,
 }: SettingsTabProps) {
   // G2: persisted settings — load on mount, save on change.
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -116,6 +122,36 @@ export default function SettingsTab({
       console.error("save_settings failed:", e)
     );
   };
+
+  const handleClearManifestCache = useCallback(async () => {
+    const confirmed = window.confirm(
+      t("settings.clearManifestCacheConfirm", locale)
+    );
+    if (!confirmed) return;
+
+    try {
+      const deleted = await clearManifestCache();
+      if (deleted > 0) {
+        showToast?.(
+          `🧹 ${t("toast.manifestCacheCleared", locale)}`,
+          ""
+        );
+      } else {
+        showToast?.(
+          `ℹ️ ${t("toast.manifestCacheAlreadyEmpty", locale)}`,
+          ""
+        );
+      }
+      // Optionally refresh the sync state
+      onSyncManifests?.();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast?.(
+        `❌ ${t("toast.manifestCacheClearFailed", locale)}`,
+        msg
+      );
+    }
+  }, [locale, showToast, onSyncManifests]);
 
   return (
     <div className={active ? "tab-content active" : "tab-content"} id="tab-settings">
@@ -237,6 +273,51 @@ export default function SettingsTab({
                   onClick={() => onSyncManifests?.()}
                 >
                   {manifestSyncing ? "…" : t("settings.syncManifests", locale)}
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Upload progress bar */}
+          {manifestConsent && manifestSyncing && manifestProgress && (
+            <div className="setting-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "6px" }}>
+              <div style={{ fontSize: "13px", opacity: 0.9 }}>
+                {manifestProgress.status === "chunking"
+                  ? `📦 ${manifestProgress.currentFile}`
+                  : `📤 ${t("toast.manifestUploading", locale)} ${manifestProgress.completedFiles}/${manifestProgress.totalFiles}`}
+              </div>
+              <div style={{
+                width: "100%",
+                height: "8px",
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: "4px",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${manifestProgress.overallPercent}%`,
+                  height: "100%",
+                  background: "linear-gradient(90deg, #f0b940, #f67014)",
+                  borderRadius: "4px",
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: "11px", opacity: 0.7, display: "flex", justifyContent: "space-between" }}>
+                <span>{manifestProgress.currentFile}</span>
+                <span>{manifestProgress.overallPercent}%</span>
+              </div>
+            </div>
+          )}
+          {manifestConsent && (
+            <div className="setting-row">
+              <div>
+                <div className="label">{t("settings.clearManifestCache", locale)}</div>
+                <div className="desc">{t("settings.clearManifestCacheDesc", locale)}</div>
+              </div>
+              <div className="control">
+                <button
+                  className="setting-select"
+                  onClick={handleClearManifestCache}
+                >
+                  🗑️ {t("settings.clearManifestCache", locale)}
                 </button>
               </div>
             </div>

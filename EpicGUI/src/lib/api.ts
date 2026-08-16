@@ -136,3 +136,8 @@ export const getManifestConsent = (): Promise<ManifestConsentState> =>
 
 export const setManifestConsent = (consent: boolean, dismissed: boolean): Promise<void> =>
   invoke("set_manifest_consent", { consent, dismissed });
+
+// Clear the on-disk manifest upload cache. Returns the number of files deleted.
+// Next Sync Now call will re-upload everything from scratch.
+export const clearManifestCache = (): Promise<number> =>
+  invoke("clear_manifest_cache");

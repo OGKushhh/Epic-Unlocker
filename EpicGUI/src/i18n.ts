@@ -240,6 +240,9 @@ const strings: Record<string, Record<Locale, string>> = {
   "settings.shareManifestsDesc": { en: "Upload game manifests to the public database. No personal data is included.", ar: "رفع بيانات الألعاب إلى قاعدة البيانات العامة. لا تتضمن بيانات شخصية." },
   "settings.syncManifests": { en: "Sync Now", ar: "مزامنة الآن" },
   "settings.syncManifestsDesc": { en: "Scan and upload any new manifests", ar: "فحص ورفع أي بيانات جديدة" },
+  "settings.clearManifestCache": { en: "Clear Upload Cache", ar: "مسح سجل الرفع" },
+  "settings.clearManifestCacheDesc": { en: "Force re-upload all manifests on next sync", ar: "إعادة رفع جميع الملفات في المزامنة التالية" },
+  "settings.clearManifestCacheConfirm": { en: "Clear the local upload cache? This will re-upload all manifests on the next sync.", ar: "هل تريد مسح سجل الرفع؟ سيتم إعادة رفع جميع الملفات في المزامنة التالية." },
 
   // Manifest toast messages
   "toast.manifestScanning": { en: "Scanning manifests…", ar: "جاري فحص البيانات…" },
@@ -249,6 +252,9 @@ const strings: Record<string, Record<Locale, string>> = {
   "toast.manifestUploadSkipped": { en: "All manifests already synced", ar: "جميع البيانات متزامنة بالفعل" },
   "toast.manifestUploadFailed": { en: "Manifest upload failed", ar: "فشل رفع البيانات" },
   "toast.manifestNoConsent": { en: "Manifest sharing is disabled", ar: "مشاركة البيانات معطلة" },
+  "toast.manifestCacheCleared": { en: "Upload cache cleared", ar: "تم مسح سجل الرفع" },
+  "toast.manifestCacheAlreadyEmpty": { en: "No cache file to clear", ar: "لا يوجد سجل رفع لمسحه" },
+  "toast.manifestCacheClearFailed": { en: "Failed to clear cache", ar: "فشل مسح سجل الرفع" },
 };
 
 export function t(key: string, locale: Locale): string {

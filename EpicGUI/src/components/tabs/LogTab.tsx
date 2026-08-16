@@ -32,6 +32,7 @@ interface LogTabProps {
   onClear?: () => Promise<void> | void;
   /** Called when the user clicks "Open File" — should invoke `open_log_externally`. */
   onOpenFile?: () => Promise<void> | void;
+  showToast?: (title: string, body: string) => void;
 }
 
 export default function LogTab({
@@ -43,6 +44,7 @@ export default function LogTab({
   locale = "en",
   onClear,
   onOpenFile,
+  showToast: _showToast,
 }: LogTabProps) {
   const [search, setSearch] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
