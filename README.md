@@ -17,10 +17,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/EOS%20SDK-1.18.1.2-blue" alt="EOS SDK">
-  <img src="https://img.shields.io/badge/C%2B%2B-17-blue" alt="C++">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/platform-Windows-lightgrey" alt="Platform">
+  <img src="https://img.shields.io/badge/EOS_SDK-1.18.1.2-6C3CE1?logo=epicgames&logoColor=white" alt="EOS SDK">
+  <img src="https://img.shields.io/badge/C++-17-00599C?logo=c%2B%2B&logoColor=white" alt="C++17">
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white" alt="Platform">
   <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/total?label=downloads&color=brightgreen" alt="Total Downloads">
   <img src="https://img.shields.io/github/downloads/OGKushhh/EpicAchievementsUnlocker/latest/total?label=downloads%40latest&color=brightgreen" alt="Latest Release Downloads">
 </p>
