@@ -148,16 +148,24 @@ export default function AchievementsTab({
   const [sortOpen, setSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
-  // Close sort dropdown on outside click
+  // Close sort dropdown on outside click or Esc
   useEffect(() => {
     if (!sortOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+    const handler = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent && e.key === "Escape") {
+        setSortOpen(false);
+        return;
+      }
+      if (e instanceof MouseEvent && sortRef.current && !sortRef.current.contains(e.target as Node)) {
         setSortOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", handler);
+    };
   }, [sortOpen]);
 
   const filtered = useMemo(() => {
@@ -177,11 +185,12 @@ export default function AchievementsTab({
   }, [achievements, search, filter, sortMode]);
 
   return (
-    <div className={`tab-content${active ? " active" : ""}`} id="tab-ach">
+    <div className={active ? "tab-content active" : "tab-content"} id="tab-ach">
       <div className="ach-toolbar">
         <input
           className="search"
           placeholder={t("ach.searchPlaceholder", locale)}
+          aria-label={t("ach.searchPlaceholder", locale)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ flex: "1 1 0px", minWidth: "100px" }}
@@ -189,7 +198,7 @@ export default function AchievementsTab({
         {FILTER_KEYS.map((f) => (
           <button
             key={f.id}
-            className={`filter-btn${filter === f.id ? " active" : ""}`}
+            className={filter === f.id ? "filter-btn active" : "filter-btn"}
             onClick={() => setFilter(f.id)}
           >
             {t(f.key, locale)}
@@ -204,7 +213,7 @@ export default function AchievementsTab({
           <button
             className="filter-btn"
             onClick={() => setSortOpen((v) => !v)}
-            title="Sort achievements"
+            title={t("ach.sortLabel", locale)}
             style={{ display: "flex", alignItems: "center", gap: "4px" }}
           >
             <span style={{ fontSize: "13px" }}>⇅</span>
@@ -231,6 +240,9 @@ export default function AchievementsTab({
               {/* Default option */}
               <div
                 onClick={() => { setSortMode("default"); setSortOpen(false); }}
+                role="option"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSortMode("default"); setSortOpen(false); } }}
                 style={{
                   padding: "8px 12px",
                   cursor: "pointer",
@@ -248,6 +260,9 @@ export default function AchievementsTab({
                 <div
                   key={opt.id}
                   onClick={() => { setSortMode(opt.id); setSortOpen(false); }}
+                  role="option"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSortMode(opt.id); setSortOpen(false); } }}
                   style={{
                     padding: "8px 12px",
                     cursor: "pointer",
@@ -267,7 +282,7 @@ export default function AchievementsTab({
         </div>
       </div>
 
-      <div className="ach-list" id="achList">
+      <div className="ach-list" id="achList" role="list">
         {loading && (
           <EmptyState
             icon="⏳"
@@ -301,11 +316,11 @@ export default function AchievementsTab({
         )}
 
         {!loading &&
-          filtered.map((ach, idx) => (
+          filtered.map((ach) => (
             <AchievementRow
               key={ach.id}
               ach={ach}
-              emoji={emojis[idx % emojis.length] || "🏅"}
+              emoji={emojis[achievements.findIndex(a => a.id === ach.id) % emojis.length] || "🏅"}
               locale={locale}
               iconSrc={
                 ach.iconPath && IS_TAURI
@@ -411,7 +426,7 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
 
   return (
     <div
-      className={`ach-row ${ach.unlocked ? "unlocked" : "locked"}${flickerKey > 0 ? " copy-flicker" : ""}`}
+      className={"ach-row " + (ach.unlocked ? "unlocked" : "locked") + (flickerKey > 0 ? " copy-flicker" : "")}
       onMouseEnter={handleRowMouseEnter}
       onMouseLeave={() => onHover(null)}
       onContextMenu={(e) => {
@@ -420,9 +435,10 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
         // Bump key to re-trigger the CSS animation
         setFlickerKey((k) => k + 1);
       }}
-      title={`Right-click to copy ID: ${ach.id}`}
+      title={t("ach.copyIdHint", locale).replace("{id}", ach.id)}
       // onAnimationEnd cleans up the class so it can re-trigger next time
       onAnimationEnd={() => setFlickerKey(0)}
+      role="listitem"
     >
       <div
         className="ach-icon"
@@ -453,17 +469,15 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
           emoji
         )}
       </div>
-      {/* Preview popover — sibling of .ach-icon so parent opacity doesn't dim it */}
+      {/* Preview popover — always in DOM; CSS uses .ach-icon:hover + .icon-preview { opacity: 1 } */}
+      {showImg && (
       <div className="icon-preview">
-        {showImg ? (
           <img
             src={iconSrc!}
             alt=""
           />
-        ) : (
-          <span className="preview-emoji">{emoji}</span>
-        )}
       </div>
+      )}
 
       <div className="ach-body">
         <div className="ach-title">{ach.title}</div>
@@ -540,13 +554,13 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
 
         <button
           className="unlock-btn"
-          disabled={ach.unlocked}
+          disabled={ach.unlocked || ach.unlocking}
           onClick={(e) => {
             e.stopPropagation();
             onUnlock(ach);
           }}
         >
-          {ach.unlocked ? t("ach.btnDone", locale) : t("ach.btnUnlock", locale)}
+          {ach.unlocked ? t("ach.btnDone", locale) : ach.unlocking ? t("ach.badgeUnlocking", locale) : t("ach.btnUnlock", locale)}
         </button>
       </div>
     </div>

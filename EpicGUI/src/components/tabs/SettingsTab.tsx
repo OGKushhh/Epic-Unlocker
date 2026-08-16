@@ -45,16 +45,24 @@ function Toggle({ initial = false, onChange }: ToggleProps) {
   const [on, setOn] = useState(initial);
   // Sync with parent prop changes (e.g. when settings load asynchronously)
   useEffect(() => setOn(initial), [initial]);
+  const toggle = () => {
+    const next = !on;
+    setOn(next);
+    onChange?.(next);
+  };
   return (
     <div
-      className={`toggle-switch${on ? " on" : ""}`}
-      onClick={() => {
-        const next = !on;
-        setOn(next);
-        onChange?.(next);
+      className={on ? "toggle-switch on" : "toggle-switch"}
+      onClick={toggle}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          toggle();
+        }
       }}
       role="switch"
       aria-checked={on}
+      tabIndex={0}
     >
       <div className="knob" />
     </div>
@@ -97,7 +105,7 @@ export default function SettingsTab({ active, theme, onThemeChange, locale = "en
   };
 
   return (
-    <div className={`tab-content${active ? " active" : ""}`} id="tab-settings">
+    <div className={active ? "tab-content active" : "tab-content"} id="tab-settings">
       <div className="settings-wrap">
         {/* Appearance */}
         <div className="settings-group">
@@ -221,7 +229,7 @@ export default function SettingsTab({ active, theme, onThemeChange, locale = "en
               <button
                 className="setting-select"
                 onClick={() => openLogExternally().catch((e) =>
-                  alert(`Failed to open log: ${e}`)
+                  console.error("Failed to open log:", e)
                 )}
               >
                 {t("settings.open", locale)}
@@ -257,7 +265,7 @@ export default function SettingsTab({ active, theme, onThemeChange, locale = "en
                 disabled={!sdkLogPath}
                 onClick={() =>
                   openSdkLogExternally().catch((e) =>
-                    alert(`Failed to open SDK log: ${e}`)
+                    console.error("Failed to open SDK log:", e)
                   )
                 }
               >

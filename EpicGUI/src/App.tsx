@@ -20,6 +20,7 @@ import Sidebar from "./components/Sidebar";
 import Statusbar from "./components/Statusbar";
 import UnlockAllModal from "./components/UnlockAllModal";
 import Tooltip, { type TooltipState } from "./components/Tooltip";
+import ErrorBoundary from "./components/ErrorBoundary";
 import AchievementsTab from "./components/tabs/AchievementsTab";
 import DlcTab from "./components/tabs/DlcTab";
 import LogTab from "./components/tabs/LogTab";
@@ -68,6 +69,7 @@ export default function App() {
     fetchIcons,
     fetchRarity,
     clearIconCache,
+    gameInfo,
   } = useGameData();
 
   const connected = connection?.connected ?? false;
@@ -167,12 +169,12 @@ export default function App() {
       if (failed > 0) {
         showToast(
           `⚠️ ${t("toast.iconsFetchedFail", locale)} (${failed})`,
-          `New: ${ok} · Cached: ${skipped} · No URL: ${noUrl} · Failed: ${failed}. See log for details.`
+          t("toast.iconsDetailFailed", locale).replace("{ok}", String(ok)).replace("{skipped}", String(skipped)).replace("{noUrl}", String(noUrl)).replace("{failed}", String(failed))
         );
       } else {
         showToast(
           `✅ ${t("toast.iconsFetched", locale)}`,
-          `New: ${ok} · Cached: ${skipped} · No URL: ${noUrl}.`
+          t("toast.iconsDetail", locale).replace("{ok}", String(ok)).replace("{skipped}", String(skipped)).replace("{noUrl}", String(noUrl))
         );
       }
     } catch (e) {
@@ -205,7 +207,7 @@ export default function App() {
     try {
       const deleted = await clearIconCache();
       if (deleted > 0) {
-        showToast(`✅ ${t("toast.cacheCleared", locale)}`, `Deleted ${deleted} cached icon${deleted === 1 ? "" : "s"}. ${t("toast.cacheClearedBody", locale)}`);
+        showToast(`✅ ${t("toast.cacheCleared", locale)}`, `${t("toast.cacheClearedCount", locale).replace("{count}", String(deleted))} ${t("toast.cacheClearedBody", locale)}`);
       } else {
         showToast(`✅ ${t("toast.cacheCleared", locale)}`, t("toast.noCachedIcons", locale));
       }
@@ -304,66 +306,71 @@ export default function App() {
       <Menubar active={activeTab} onChange={setActiveTab} locale={locale} />
 
       <div className="main">
-        <Sidebar
-          visible={activeTab === "ach"}
-          achievements={achievements}
-          toasts={toasts}
-          connected={connected}
-          loading={loading}
-          gameName={gameName}
-          locale={locale}
-          onUnlockAllClick={handleUnlockAllClick}
-          onRefreshClick={handleRefreshClick}
-          onFetchIconsClick={handleFetchIconsClick}
-          onFetchRarityClick={handleFetchRarityClick}
-          onClearCacheClick={handleClearCacheClick}
-        />
-
-        <div className="content">
-          <AchievementsTab
-            active={activeTab === "ach"}
+        <ErrorBoundary>
+          <Sidebar
+            visible={activeTab === "ach"}
             achievements={achievements}
-            emojis={achievementEmojis}
-            loading={loading}
+            toasts={toasts}
             connected={connected}
-            locale={locale}
-            onHoverRow={handleHoverRow}
-            onHoverStatGated={handleHoverStatGated}
-            onUnlockRow={handleUnlockRow}
-          />
-          <DlcTab
-            active={activeTab === "dlc"}
-            dlc={dlc}
-            entitlementCount={entitlementCount}
             loading={loading}
-            connected={connected}
+            gameName={gameName}
+            eosVersion={gameInfo?.eosVersion}
             locale={locale}
+            onUnlockAllClick={handleUnlockAllClick}
+            onRefreshClick={handleRefreshClick}
+            onFetchIconsClick={handleFetchIconsClick}
+            onFetchRarityClick={handleFetchRarityClick}
+            onClearCacheClick={handleClearCacheClick}
           />
-          <LogTab
-            active={activeTab === "log"}
-            lines={logLines}
-            loading={loading}
-            connected={connected}
-            logPath={logPath}
-            locale={locale}
-            onClear={handleClearLog}
-            onOpenFile={handleOpenLogFile}
-          />
-          <SettingsTab
-            active={activeTab === "settings"}
-            theme={theme}
-            onThemeChange={setTheme}
-            locale={locale}
-          />
+        </ErrorBoundary>
 
-          <Statusbar
-            connected={connected}
-            loading={loading}
-            lastError={connection?.lastError ?? null}
-            logSizeBytes={logFileSize}
-            locale={locale}
-          />
-        </div>
+        <ErrorBoundary>
+          <div className="content">
+            <AchievementsTab
+              active={activeTab === "ach"}
+              achievements={achievements}
+              emojis={achievementEmojis}
+              loading={loading}
+              connected={connected}
+              locale={locale}
+              onHoverRow={handleHoverRow}
+              onHoverStatGated={handleHoverStatGated}
+              onUnlockRow={handleUnlockRow}
+            />
+            <DlcTab
+              active={activeTab === "dlc"}
+              dlc={dlc}
+              entitlementCount={entitlementCount}
+              loading={loading}
+              connected={connected}
+              locale={locale}
+            />
+            <LogTab
+              active={activeTab === "log"}
+              lines={logLines}
+              loading={loading}
+              connected={connected}
+              logPath={logPath}
+              locale={locale}
+              onClear={handleClearLog}
+              onOpenFile={handleOpenLogFile}
+            />
+            <SettingsTab
+              active={activeTab === "settings"}
+              theme={theme}
+              onThemeChange={setTheme}
+              locale={locale}
+            />
+
+            <Statusbar
+              connected={connected}
+              loading={loading}
+              lastError={connection?.lastError ?? null}
+              logSizeBytes={logFileSize}
+              locale={locale}
+            />
+          </div>
+        </ErrorBoundary>
       </div>
 
       <UnlockAllModal

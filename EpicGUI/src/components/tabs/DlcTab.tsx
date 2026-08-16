@@ -10,7 +10,6 @@
  * Shows empty states when no data is available.
  */
 
-import { useMemo } from "react";
 import type { DlcEntry } from "../../data/mockupData";
 import { t, type Locale } from "../../i18n";
 
@@ -29,10 +28,10 @@ export default function DlcTab({
   dlc,
   entitlementCount,
   loading = false,
-  connected = true,
+  connected = false,
   locale = "en",
 }: DlcTabProps) {
-  const data = useMemo(() => dlc, [dlc]);
+  const data = dlc;
   const totalQueried = data.length;
   const totalOwned = data.filter((d) => d.status === "Owned").length;
   // -1 means the log hasn't yielded a GetEntitlementsCount line yet.
@@ -41,7 +40,7 @@ export default function DlcTab({
     entitlementCount === undefined || entitlementCount < 0 ? "?" : String(entitlementCount);
 
   return (
-    <div className={`tab-content${active ? " active" : ""}`} id="tab-dlc">
+    <div className={active ? "tab-content active" : "tab-content"} id="tab-dlc">
       <div className="dlc-stats">
         <span>
           <strong>{totalQueried}</strong> {t("dlc.dlcsQueried", locale)}

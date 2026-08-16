@@ -4,13 +4,17 @@
  * so we treat it as the canonical starting dataset for the carbon copy.
  */
 
-export type RarityTier = "bronze" | "silver" | "gold" | "platinum" | "unknown";
+// Import RarityTier from the canonical types module to avoid duplication
+import type { RarityTier } from "../types";
+export type { RarityTier };
 
 export interface Achievement {
   id: string;
   title: string;
   desc: string;
   unlocked: boolean;
+  /** Achievement is in the process of being unlocked (sent to DLL, awaiting EOS response). */
+  unlocking?: boolean;
   hidden: boolean;
   progress: number; // 0..1
   /**

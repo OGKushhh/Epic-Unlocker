@@ -38,7 +38,7 @@ export default function LogTab({
   active,
   lines,
   loading = false,
-  connected = true,
+  connected = false,
   logPath,
   locale = "en",
   onClear,
@@ -46,8 +46,8 @@ export default function LogTab({
 }: LogTabProps) {
   const [search, setSearch] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
-  // User-feedback state for the toolbar buttons. Shows a brief "(opening…)"
-  // or "(failed: …)" caption next to the button so the click is acknowledged
+  // User-feedback state for the toolbar buttons. Shows a brief "(opening...)"
+  // or "(failed: ...)" caption next to the button so the click is acknowledged
   // even if the launched editor takes a moment to appear.
   const [openStatus, setOpenStatus] = useState<"idle" | "working" | "error">("idle");
   const [openError, setOpenError] = useState<string>("");
@@ -115,33 +115,36 @@ export default function LogTab({
     }
   };
 
+  const tabClass = active ? "tab-content active" : "tab-content";
+
   return (
-    <div className={`tab-content${active ? " active" : ""}`} id="tab-log">
+    <div className={tabClass} id="tab-log">
       <div className="log-toolbar">
         <input
           className="search"
           placeholder={t("log.filterPlaceholder", locale)}
+          aria-label={t("log.filterPlaceholder", locale)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         <button
           className="btn"
-          title="Wipe ScreamAPI.log on disk"
+          title={t("log.clearTitle", locale)}
           onClick={handleClear}
           disabled={clearStatus === "working"}
         >
           {clearStatus === "working" ? t("log.clearing", locale) : clearStatus === "done" ? t("log.cleared", locale) : t("log.clear", locale)}
         </button>
         <button
-          className={`btn${autoScroll ? " active" : ""}`}
+          className={autoScroll ? "btn active" : "btn"}
           onClick={() => setAutoScroll((v) => !v)}
-          title="Pin the log view to the bottom when new lines arrive"
+          title={t("log.autoScrollTitle", locale)}
         >
           {t("log.autoScroll", locale)}
         </button>
         <button
           className="btn"
-          title="Open ScreamAPI.log in your default .log editor"
+          title={t("log.openFileTitle", locale)}
           onClick={handleOpenFile}
           disabled={openStatus === "working" || !logPath}
         >
@@ -161,7 +164,7 @@ export default function LogTab({
               whiteSpace: "nowrap",
             }}
           >
-            ⚠ {openError}
+            {"\u26A0 "}{openError}
           </span>
         )}
         {!logPath && connected && (
@@ -201,7 +204,7 @@ export default function LogTab({
         {!loading && lines.length === 0 && connected && logPath && (
           <div className="log-line">
             <span className="lvl-info">
-              📄 Log file: {logPath} — {t("log.noLines", locale).toLowerCase()}
+              {"\uD83D\uDCC4 Log file: "}{logPath}{" \u2014 "}{t("log.noLines", locale).toLowerCase()}
             </span>
           </div>
         )}
@@ -217,7 +220,7 @@ export default function LogTab({
           const ts = m ? m[0] : "";
           const rest = m ? line.text.replace(ts, "") : line.text;
           return (
-            <div className="log-line" key={idx}>
+            <div className="log-line" key={`${line.cls}-${idx}-${line.text.slice(0, 40)}`}>
               <span className="ts">{ts}</span>{" "}
               <span className={line.cls}>{rest}</span>
             </div>

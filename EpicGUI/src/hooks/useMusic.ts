@@ -52,13 +52,12 @@ export function useMusic() {
       audio.pause();
       setPlaying(false);
     } else {
-      audio.play().catch(() => {
-        // Autoplay blocked — user needs to interact first.
-        // This is fine; they clicked the button, so it should work.
-        // But if the audio file is missing, this will also fail.
+      audio.play().then(() => {
+        setPlaying(true);
+      }).catch(() => {
+        // Autoplay blocked or audio file missing — leave state as not-playing.
         console.warn("[Music] Playback failed — audio file may be missing.");
       });
-      setPlaying(true);
     }
   }, [playing]);
 

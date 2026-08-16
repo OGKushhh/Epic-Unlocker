@@ -6,7 +6,7 @@
  * Backdrop click closes (matches mockup's `if (e.target === this)` logic).
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { t, type Locale } from "../i18n";
 
 interface UnlockAllModalProps {
@@ -24,11 +24,35 @@ export default function UnlockAllModal({
   totalCount,
   locale = "en",
 }: UnlockAllModalProps) {
-  // Esc to close
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Esc to close + focus trap
   useEffect(() => {
     if (!open) return;
+
+    // Focus the modal box on open
+    boxRef.current?.focus();
+
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Focus trap: Tab / Shift+Tab cycles within the modal
+      if (e.key !== "Tab" || !boxRef.current) return;
+      const focusable = boxRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -44,7 +68,7 @@ export default function UnlockAllModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal-box">
+      <div className="modal-box" ref={boxRef} tabIndex={-1} style={{ outline: "none" }}>
         <div className="modal-title">⚠️ {t("modal.unlockTitle", locale)}</div>
         <div className="modal-body">
           <p>

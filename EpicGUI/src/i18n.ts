@@ -67,6 +67,9 @@ const strings: Record<string, Record<Locale, string>> = {
   "ach.sortXpHigh": { en: "XP: High to Low", ar: "XP: من الأعلى إلى الأدنى" },
   "ach.sortXpLow": { en: "XP: Low to High", ar: "XP: من الأدنى إلى الأعلى" },
   "ach.sortDefault": { en: "Default", ar: "افتراضي" },
+  "ach.sortLabel": { en: "Sort achievements", ar: "ترتيب الإنجازات" },
+  "ach.copyIdHint": { en: "Right-click to copy ID: {id}", ar: "انقر بزر الماوس الأيمن لنسخ المعرف: {id}" },
+  "ach.badgeUnlocking": { en: "Unlocking…", ar: "جاري الفتح…" },
   "ach.unlockedOn": { en: "Unlocked", ar: "فتح في" },
   "ach.xpLabel": { en: "XP", ar: "XP" },
   "ach.ofPlayersUnlock": { en: "of players unlock", ar: "من اللاعبين فتحوا" },
@@ -99,6 +102,9 @@ const strings: Record<string, Record<Locale, string>> = {
   "log.openFile": { en: "Open File", ar: "فتح الملف" },
   "log.opening": { en: "Opening…", ar: "جاري الفتح…" },
   "log.autoScroll": { en: "Auto-scroll", ar: "تمرير تلقائي" },
+  "log.clearTitle": { en: "Wipe ScreamAPI.log on disk", ar: "مسح ScreamAPI.log على القرص" },
+  "log.autoScrollTitle": { en: "Pin the log view to the bottom when new lines arrive", ar: "تثبيت عرض السجل في الأسفل عند وصول سطور جديدة" },
+  "log.openFileTitle": { en: "Open ScreamAPI.log in your default .log editor", ar: "فتح ScreamAPI.log في محرر السجلات الافتراضي" },
   "log.filterPlaceholder": { en: "Filter log lines…", ar: "تصفية سطور السجل…" },
   "log.noLines": { en: "No log entries", ar: "لا توجد سجلات" },
   "log.noLogPath": { en: "(no log path yet)", ar: "(لا يوجد مسار سجل بعد)" },
@@ -163,6 +169,15 @@ const strings: Record<string, Record<Locale, string>> = {
   // Language toggle tooltip
   "lang.toggle": { en: "Switch to العربية", ar: "التبديل إلى English" },
 
+  // Titlebar
+  "titlebar.cycleThemes": { en: "Cycle themes (Gold → Light → Dark)", ar: "تبديل المظاهر (ذهبي → فاتح → داكن)" },
+  "titlebar.pipeConnected": { en: "Pipe connected", ar: "الأنموذج متصل" },
+  "titlebar.pipeNotConnected": { en: "Pipe not connected", ar: "الأنموذج غير متصل" },
+  "titlebar.minimize": { en: "Minimize", ar: "تصغير" },
+  "titlebar.maximize": { en: "Maximize / Restore", ar: "تكبير / استعادة" },
+  "titlebar.close": { en: "Close", ar: "إغلاق" },
+  "titlebar.volume": { en: "Volume", ar: "الصوت" },
+
   // Music
   "music.toggleOn": { en: "Play music", ar: "تشغيل الموسيقى" },
   "music.toggleOff": { en: "Stop music", ar: "إيقاف الموسيقى" },
@@ -199,6 +214,9 @@ const strings: Record<string, Record<Locale, string>> = {
   "toast.clearingCacheBody": { en: "Deleting cached icon files from disk.", ar: "حذف ملفات الأيقونات المخزنة من القرص." },
   "toast.cacheCleared": { en: "Cache cleared", ar: "تم مسح الذاكرة" },
   "toast.cacheClearedBody": { en: "Deleted cached icons. Run Fetch Icons to re-download.", ar: "تم حذف الأيقونات المخزنة. شغّل جلب الأيقونات لإعادة التحميل." },
+  "toast.cacheClearedCount": { en: "Deleted {count} cached icon(s).", ar: "تم حذف {count} أيقونة مخزنة." },
+  "toast.iconsDetail": { en: "New: {ok} · Cached: {skipped} · No URL: {noUrl}", ar: "جديد: {ok} · مخزن: {skipped} · بدون رابط: {noUrl}" },
+  "toast.iconsDetailFailed": { en: "New: {ok} · Cached: {skipped} · No URL: {noUrl} · Failed: {failed}. See log for details.", ar: "جديد: {ok} · مخزن: {skipped} · بدون رابط: {noUrl} · فشل: {failed}. راجع السجل للتفاصيل." },
   "toast.noCachedIcons": { en: "No cached icons found on disk.", ar: "لا توجد أيقونات مخزنة على القرص." },
   "toast.clearFailed": { en: "Clear failed", ar: "فشل المسح" },
   "toast.unlockAllStarted": { en: "Unlock All Started", ar: "بدأ فتح الكل" },

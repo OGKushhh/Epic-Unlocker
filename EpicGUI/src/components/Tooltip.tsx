@@ -47,6 +47,7 @@ export default function Tooltip({ state }: TooltipProps) {
     <div
       className="tooltip"
       id="tooltip"
+      role="tooltip"
       style={{
         display: state.visible ? "block" : "none",
         left: pos.left,

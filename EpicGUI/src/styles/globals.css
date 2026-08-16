@@ -329,9 +329,10 @@ body {
 .toast-item .tt-title { font-weight: 600; color: var(--accent); }
 .toast-item .tt-body { color: var(--text-dim); font-size: 11px; margin-top: 1px; }
 @keyframes toastIn {
-  from { opacity: 0; transform: translateX(-20px); }
+  from { opacity: 0; transform: translateX(var(--toast-slide, -20px)); }
   to   { opacity: 1; transform: translateX(0); }
 }
+[dir="rtl"] { --toast-slide: 20px; }
 
 /* ── Content ── */
 .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
@@ -659,6 +660,9 @@ body {
 .toggle-switch.on .knob { left: 20px; background: #1a1a1a; }
 [data-theme="light"] .toggle-switch.on .knob { background: #fff; }
 [data-theme="dark"] .toggle-switch.on .knob { background: #121212; }
+/* RTL toggle fix */
+[dir="rtl"] .toggle-switch .knob { left: auto; right: 2px; }
+[dir="rtl"] .toggle-switch.on .knob { left: auto; right: 20px; }
 
 .setting-select {
   background: var(--bg);

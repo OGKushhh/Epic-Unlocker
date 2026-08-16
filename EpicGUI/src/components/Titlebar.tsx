@@ -11,7 +11,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Locale } from "../i18n";
+import { t, type Locale } from "../i18n";
 
 interface TitlebarProps {
   themeIcon: string;
@@ -65,18 +65,21 @@ export default function Titlebar({
     ? "0 0 8px var(--green)"
     : "0 0 8px var(--red)";
   const connText = loading
-    ? "Connecting…"
+    ? t("status.connecting", locale)
     : connected
-    ? `Connected · ${gameName ?? "Game"}`
-    : "Disconnected";
+    ? `${t("status.connected", locale)} · ${gameName ?? "Game"}`
+    : t("status.disconnected", locale);
 
   return (
     <div className="titlebar" data-tauri-drag-region>
       {/* Left: language toggle */}
       <div
         className="titlebar-btn"
-        title={locale === "en" ? "Switch to العربية" : "التبديل إلى English"}
+        title={t("lang.toggle", locale)}
         onClick={onToggleLocale}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onToggleLocale(); } }}
         style={{ fontSize: "14px", cursor: "pointer" }}
       >
         {locale === "en" ? "🌐" : "🌐"}
@@ -88,8 +91,11 @@ export default function Titlebar({
       {/* Theme toggle */}
       <div
         className="theme-toggle"
-        title="Cycle themes (Gold → Light → Dark)"
+        title={t("titlebar.cycleThemes", locale)}
         onClick={onCycleTheme}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onCycleTheme(); } }}
       >
         {themeIcon}
       </div>
@@ -97,8 +103,11 @@ export default function Titlebar({
       {/* Music toggle */}
       <div
         className="titlebar-btn"
-        title={musicPlaying ? "Stop music" : "Play music"}
+        title={musicPlaying ? t("music.toggleOff", locale) : t("music.toggleOn", locale)}
         onClick={onToggleMusic}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onToggleMusic(); } }}
         style={{
           fontSize: "14px",
           cursor: "pointer",
@@ -121,8 +130,11 @@ export default function Titlebar({
         >
           <div
             className="titlebar-btn"
-            title={muted ? "Unmute" : "Mute"}
+            title={muted ? t("music.unmute", locale) : t("music.mute", locale)}
             onClick={onToggleMute}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onToggleMute(); } }}
             style={{ fontSize: "12px", cursor: "pointer" }}
           >
             {muted ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
@@ -139,7 +151,7 @@ export default function Titlebar({
               cursor: "pointer",
               accentColor: "var(--accent, #ffbd2e)",
             }}
-            title={`Volume: ${Math.round(volume * 100)}%`}
+            title={`${t("titlebar.volume", locale)}: ${Math.round(volume * 100)}%`}
           />
         </div>
       )}
@@ -148,7 +160,7 @@ export default function Titlebar({
         {titleText}
       </div>
 
-      <div className="conn" title={connected ? "Pipe connected" : "Pipe not connected"}>
+      <div className="conn" title={connected ? t("titlebar.pipeConnected", locale) : t("titlebar.pipeNotConnected", locale)}>
         <span
           className="pip"
           style={{ background: pipColor, boxShadow: pipGlow }}
@@ -160,9 +172,9 @@ export default function Titlebar({
       <div className="win-controls">
         <button
           className="win-btn"
-          title="Minimize"
+          title={t("titlebar.minimize", locale)}
           onClick={() => safeInvoke("window_minimize")}
-          aria-label="Minimize"
+          aria-label={t("titlebar.minimize", locale)}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <rect x="0" y="4.5" width="10" height="1" fill="currentColor" />
@@ -170,9 +182,9 @@ export default function Titlebar({
         </button>
         <button
           className="win-btn"
-          title="Maximize / Restore"
+          title={t("titlebar.maximize", locale)}
           onClick={() => safeInvoke("window_toggle_maximize")}
-          aria-label="Maximize / Restore"
+          aria-label={t("titlebar.maximize", locale)}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <rect
@@ -188,9 +200,9 @@ export default function Titlebar({
         </button>
         <button
           className="win-btn close"
-          title="Close"
+          title={t("titlebar.close", locale)}
           onClick={() => safeInvoke("window_close")}
-          aria-label="Close"
+          aria-label={t("titlebar.close", locale)}
         >
           <svg width="10" height="10" viewBox="0 0 10 10">
             <path

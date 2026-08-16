@@ -11,7 +11,7 @@
  *   - Toast stack at the bottom (max 4)
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Toast } from "../hooks/useToasts";
 import type { Achievement } from "../data/mockupData";
 import { t, type Locale } from "../i18n";
@@ -33,6 +33,8 @@ interface SidebarProps {
   loading?: boolean;
   /** Display name of the connected game (from Rust backend). */
   gameName?: string;
+  /** EOS SDK version from GameInfo (replaces hardcoded value). */
+  eosVersion?: string;
   locale?: Locale;
   onUnlockAllClick: () => void;
   onRefreshClick: () => void;
@@ -54,6 +56,7 @@ export default function Sidebar({
   onFetchIconsClick,
   onFetchRarityClick,
   onClearCacheClick,
+  eosVersion,
 }: SidebarProps) {
   // Pick a random game emoji ONCE per app session (lazy initial state).
   // Re-renders reuse the same value — only a full app restart picks a new one.
@@ -61,19 +64,22 @@ export default function Sidebar({
     () => GAME_EMOJIS[Math.floor(Math.random() * GAME_EMOJIS.length)]
   );
 
-  if (!visible) return null;
+  const { total, unlocked, locked, statGated, progress } = useMemo(() => {
+    const total = achievements.length;
+    const unlocked = achievements.filter((a) => a.unlocked).length;
+    const locked = total - unlocked;
+    const statGated = achievements.filter((a) => a.statThreshold).length;
+    const progress = total > 0 ? Math.round((unlocked / total) * 1000) / 10 : 0;
+    return { total, unlocked, locked, statGated, progress };
+  }, [achievements]);
 
-  const total = achievements.length;
-  const unlocked = achievements.filter((a) => a.unlocked).length;
-  const locked = total - unlocked;
-  const statGated = achievements.filter((a) => a.statThreshold).length;
-  const progress = total > 0 ? Math.round((unlocked / total) * 1000) / 10 : 0;
+  if (!visible) return null;
 
   // Game card meta reflects connection state
   const gameMeta = loading
     ? t("sidebar.connecting", locale)
     : connected
-    ? "EOS SDK 1.16.0"
+    ? (eosVersion ? `EOS SDK ${eosVersion}` : "EOS SDK")
     : t("sidebar.notConnected", locale);
 
   // Game name comes from the Rust backend (ConnectionStatus.gameName).
@@ -124,17 +130,20 @@ export default function Sidebar({
         >
           {t("sidebar.unlockAll", locale)}
         </button>
-        <button className="action-btn" onClick={onRefreshClick}>
-          {t("sidebar.refresh", locale)}
+        <button
+          className="action-btn"
+          onClick={onRefreshClick}
+        >
+          {"🔄 " + t("sidebar.refresh", locale)}
         </button>
         <button className="action-btn" onClick={onFetchIconsClick}>
-          {t("sidebar.fetchIcons", locale)}
+          {"🌐 " + t("sidebar.fetchIcons", locale)}
         </button>
         <button className="action-btn" onClick={onFetchRarityClick}>
-          {t("sidebar.fetchRarity", locale)}
+          {"🏆 " + t("sidebar.fetchRarity", locale)}
         </button>
         <button className="action-btn" onClick={onClearCacheClick}>
-          {t("sidebar.clearCache", locale)}
+          {"🗑️ " + t("sidebar.clearCache", locale)}
         </button>
       </div>
 

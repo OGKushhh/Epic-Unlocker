@@ -81,11 +81,13 @@ function isTauriRuntime(): boolean {
 
 function adaptAchievement(r: RustAchievement): Achievement {
   const unlocked = r.state === "Unlocked";
+  const unlocking = r.state === "Unlocking";
   return {
     id: r.id,
     title: r.name,
     desc: r.description,
     unlocked,
+    unlocking,
     hidden: r.isHidden,
     // A3: Wire protocol now carries real progress (0..1) from
     // EOS_Achievements_PlayerAchievement::Progress. Fall back to 0/1
@@ -173,6 +175,8 @@ export function useGameData(): GameDataState {
   const [loading, setLoading] = useState(inTauri);
   const [gameInfo, setGameInfo] = useState<RustGameInfo | null>(null);
   const gameInfoRef = useRef<RustGameInfo | null>(null);
+  // Dedup flag for auto-fetch rarity (prevents double fetch from achievements-list + game-info events)
+  const rarityFetchInProgress = useRef(false);
   // Keep ref in sync so event listeners can read the latest value
   useEffect(() => { gameInfoRef.current = gameInfo; }, [gameInfo]);
 
@@ -292,16 +296,17 @@ export function useGameData(): GameDataState {
 
         const unsubs = await Promise.all([
           listen<boolean>("connection-changed", (event) => {
-            setConnection((prev) => ({
-              connected: event.payload,
-              pipePath: prev?.pipePath ?? "\\\\.\\pipe\\EpicGUI",
-              lastError: event.payload
-                ? null
-                : prev?.lastError ?? "Pipe disconnected",
-              gameName: prev?.gameName ?? "Epic Game",
-            }));
-            // When connection drops, clear stale data so empty states show
-            if (!event.payload) {
+            if (event.payload) {
+              // On connect, fetch fresh state from backend instead of using stale local state
+              getConnectionStatus().then((cs) => setConnection(cs)).catch(() => {});
+            } else {
+              setConnection((prev) => ({
+                connected: false,
+                pipePath: prev?.pipePath ?? "\\\\.\\pipe\\EpicGUI",
+                lastError: prev?.lastError ?? "Pipe disconnected",
+                gameName: prev?.gameName ?? "Epic Game",
+              }));
+              // Clear stale data so empty states show
               setAchievements([]);
               setDlc([]);
               setLogLines([]);
@@ -328,7 +333,8 @@ export function useGameData(): GameDataState {
             // Auto-fetch rarity when achievements arrive, if we have a sandbox ID
             // and achievements don't already have rarity data
             const hasRarity = event.payload.some((r) => r.rarityTier != null);
-            if (!hasRarity && gameInfoRef.current?.sandboxId) {
+            if (!hasRarity && gameInfoRef.current?.sandboxId && !rarityFetchInProgress.current) {
+              rarityFetchInProgress.current = true;
               fetchAchievementRarity()
                 .then((count) => {
                   if (count > 0) {
@@ -348,7 +354,8 @@ export function useGameData(): GameDataState {
                     });
                   }
                 })
-                .catch((e) => console.warn("[G4] Auto-fetch rarity on achievements-list failed:", e));
+                .catch((e) => console.warn("[G4] Auto-fetch rarity on achievements-list failed:", e))
+                .finally(() => { rarityFetchInProgress.current = false; });
             }
           }),
           listen<{ id: string; state: string; unlockTime?: string | null }>("achievement-update", (event) => {
@@ -359,6 +366,7 @@ export function useGameData(): GameDataState {
                   ? {
                       ...a,
                       unlocked: state === "Unlocked",
+                      unlocking: state === "Unlocking",
                       progress: state === "Unlocked" ? 1 : a.progress,
                       // G4: Update unlockTime from the AchUpdate packet.
                       // The DLL now sends the real EOS-provided timestamp.
@@ -424,7 +432,9 @@ export function useGameData(): GameDataState {
           listen<RustGameInfo>("game-info", (event) => {
             setGameInfo(event.payload);
             // Auto-fetch rarity in the background when we get a sandbox ID
-            if (event.payload.sandboxId) {
+            // Dedup with achievements-list handler to avoid double fetch
+            if (event.payload.sandboxId && !rarityFetchInProgress.current) {
+              rarityFetchInProgress.current = true;
               fetchAchievementRarity()
                 .then((count) => {
                   console.log(`[G4] Auto-fetched rarity for ${count} achievements`);
@@ -443,7 +453,8 @@ export function useGameData(): GameDataState {
                     });
                   });
                 })
-                .catch((e) => console.warn("[G4] Auto-fetch rarity failed:", e));
+                .catch((e) => console.warn("[G4] Auto-fetch rarity failed:", e))
+                .finally(() => { rarityFetchInProgress.current = false; });
             }
           }),
         ]);
