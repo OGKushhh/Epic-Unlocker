@@ -67,13 +67,18 @@ EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* 
 		}
 	}
 
-	if(Config::EnableOverlay()){
-		std::thread([](){
-			Sleep(500);
-			Logger::info("[INIT] Platform detected - triggering achievement manager initialization");
-			AchievementManager::init();
-		}).detach();
-	}
+	// Achievement manager init runs regardless of overlay state. The
+	// overlay (ImGui, kiero, icon downloader) is opt-in via
+	// Config::EnableOverlay() and is wired up by AchievementManager::initWithOverlay().
+	// Without the overlay, init() just handles EOS-side queries +
+	// notification subscription + PipeServer startup for EpicGUI.
+	// init() is idempotent so racing with the polling thread in
+	// ScreamAPI::init is safe.
+	std::thread([](){
+		Sleep(500);
+		Logger::info("[INIT] Platform detected - triggering achievement manager initialization");
+		AchievementManager::init();
+	}).detach();
 
 	return result;
 }

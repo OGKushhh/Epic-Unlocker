@@ -284,6 +284,11 @@ static void ForceAchievementsConfiguration(EOS_HAchievements handle, EOS_Product
 
     g_forcedQueriesPending = 2;
 
+    // ApiVersion=1 is the safe backward-compatible choice: it tells the SDK
+    // to use the v1 struct layout (which exists in all SDK versions). Bumping
+    // the ApiVersion would make the SDK look for fields that may not exist in
+    // older SDKs, causing mismatches. The ForceAchievementsConfig option exists
+    // specifically to force v1 layout for v2+ SDKs.
     EOS_Achievements_QueryDefinitionsOptions defOpts = {1, userId, nullptr, nullptr, 0};
     Original::Achievements_QueryDefinitions(handle, &defOpts, nullptr,
         [](const EOS_Achievements_OnQueryDefinitionsCompleteCallbackInfo* Data) {
@@ -384,7 +389,10 @@ EOS_HPlatform EOS_CALL Platform_Create(const EOS_Platform_Options* Options) {
         Logger::info("[HOOK] SDK log capture disabled (EnableSDKLog=false in config)");
     }
 
-    if (result && Config::EnableOverlay()) {
+    // Trigger achievement manager init unconditionally (achievements work
+    // with the overlay disabled). init() is idempotent so it is safe if the
+    // polling thread in ScreamAPI::init races us.
+    if (result) {
         std::thread([]() {
             Sleep(500);
             Logger::info("[HOOK] Triggering achievement manager initialization");
@@ -531,11 +539,21 @@ void EOS_CALL Achievements_UnlockAchievements(EOS_HAchievements Handle, const EO
 
 EOS_NotificationId EOS_CALL Achievements_AddNotifyAchievementsUnlockedV2(EOS_HAchievements Handle, const EOS_Achievements_AddNotifyAchievementsUnlockedV2Options* Options, void* ClientData, const EOS_Achievements_OnAchievementsUnlockedCallbackV2 NotificationFn) {
     Logger::debug("[HOOK] EOS_Achievements_AddNotifyAchievementsUnlockedV2 called");
+    // Fix #4: If V2 function not available in older SDK, return invalid notification ID
+    if (!Original::Achievements_AddNotifyAchievementsUnlockedV2) {
+        Logger::warn("[HOOK] AddNotifyAchievementsUnlockedV2 not available in this SDK version - returning EOS_INVALID_NOTIFICATIONID");
+        return EOS_INVALID_NOTIFICATIONID;
+    }
     return Original::Achievements_AddNotifyAchievementsUnlockedV2(Handle, Options, ClientData, NotificationFn);
 }
 
 EOS_NotificationId EOS_CALL Achievements_AddNotifyAchievementsUnlocked(EOS_HAchievements Handle, const EOS_Achievements_AddNotifyAchievementsUnlockedOptions* Options, void* ClientData, const EOS_Achievements_OnAchievementsUnlockedCallback NotificationFn) {
     Logger::debug("[HOOK] EOS_Achievements_AddNotifyAchievementsUnlocked (deprecated) called");
+    // Fix #4: Guard against missing function in older SDKs
+    if (!Original::Achievements_AddNotifyAchievementsUnlocked) {
+        Logger::warn("[HOOK] AddNotifyAchievementsUnlocked not available - returning EOS_INVALID_NOTIFICATIONID");
+        return EOS_INVALID_NOTIFICATIONID;
+    }
     return Original::Achievements_AddNotifyAchievementsUnlocked(Handle, Options, ClientData, NotificationFn);
 }
 
@@ -926,11 +944,24 @@ bool InitializeHooks(HMODULE originalDLL) {
     INSTALL_HOOK(originalDLL, EOS_Platform_GetUIInterface, Hooks::Platform_GetUIInterface, Original::Platform_GetUIInterface);
 
     Logger::info("[HOOK] Installing Achievement hooks...");
+    // Fix #4: Version-gate hook installation. V2 achievement notification hooks
+    // (AddNotifyAchievementsUnlockedV2, CopyAchievementDefinitionV2*) were
+    // introduced in SDK 1.14.0. On older SDKs, these functions don't exist in
+    // the DLL, so we use INSTALL_HOOK_OPTIONAL to avoid fatal errors.
+    if (EOS_Compat::isFeatureAvailable("AchievementsUnlockedV2")) {
+        Logger::info("[HOOK]   V2 achievement notifications: AVAILABLE (SDK 1.14+)");
+    } else {
+        Logger::warn("[HOOK]   V2 achievement notifications: NOT AVAILABLE (SDK < 1.14)");
+        Logger::warn("[HOOK]   V2 hooks will be skipped (INSTALL_HOOK_OPTIONAL)");
+    }
     INSTALL_HOOK(originalDLL, EOS_Achievements_QueryDefinitions, Hooks::Achievements_QueryDefinitions, Original::Achievements_QueryDefinitions);
     INSTALL_HOOK(originalDLL, EOS_Achievements_QueryPlayerAchievements, Hooks::Achievements_QueryPlayerAchievements, Original::Achievements_QueryPlayerAchievements);
     INSTALL_HOOK(originalDLL, EOS_Achievements_UnlockAchievements, Hooks::Achievements_UnlockAchievements, Original::Achievements_UnlockAchievements);
-    INSTALL_HOOK(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlockedV2, Hooks::Achievements_AddNotifyAchievementsUnlockedV2, Original::Achievements_AddNotifyAchievementsUnlockedV2);
-    INSTALL_HOOK(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlocked, Hooks::Achievements_AddNotifyAchievementsUnlocked, Original::Achievements_AddNotifyAchievementsUnlocked);
+    // Fix #4: AddNotifyAchievementsUnlockedV2 was introduced in SDK 1.14.0.
+    // It does not exist in SDK 1.13.0. Use OPTIONAL to avoid crash on older SDKs.
+    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlockedV2, Hooks::Achievements_AddNotifyAchievementsUnlockedV2, Original::Achievements_AddNotifyAchievementsUnlockedV2);
+    // Deprecated V1 notification hook - make optional for older SDKs that may not export it
+    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlocked, Hooks::Achievements_AddNotifyAchievementsUnlocked, Original::Achievements_AddNotifyAchievementsUnlocked);
 
     Logger::info("[HOOK] Installing Ecom hooks...");
     INSTALL_HOOK(originalDLL, EOS_Ecom_QueryOwnership, Hooks::Ecom_QueryOwnership, Original::Ecom_QueryOwnership);
@@ -960,19 +991,38 @@ bool InitializeHooks(HMODULE originalDLL) {
     // directly from the Platform_Create hook to register SdkLogCallback).
     // Using GetProcAddress avoids the LNK2001 from the LinkerExports
     // forwarder pragma (which only re-exports, does not make importable).
+    // On 32-bit __stdcall, exports are decorated (_Name@paramBytes),
+    // so we must use the decorated names for GetProcAddress to succeed.
     {
-        auto resolve = [originalDLL](const char* name, auto& outPtr) {
-            using FuncPtr = decltype(outPtr);
-            auto p = reinterpret_cast<FuncPtr>(GetProcAddress(originalDLL, name));
-            if (p) {
-                outPtr = p;
-                Logger::debug("[HOOK] Resolved %s -> %p", name, p);
-            } else {
-                Logger::warn("[HOOK] Could not resolve %s (SDK log capture disabled)", name);
-            }
-        };
-        resolve("EOS_Logging_SetCallback",  Original::Logging_SetCallback);
-        resolve("EOS_Logging_SetLogLevel",  Original::Logging_SetLogLevel);
+        // EOS_Logging_SetCallback: 1 param (Callback) -> @4 on 32-bit
+        void* pSetCB = GetProcAddress(originalDLL,
+#ifdef _WIN64
+            "EOS_Logging_SetCallback"
+#else
+            "_EOS_Logging_SetCallback@4"
+#endif
+        );
+        if (pSetCB) {
+            Original::Logging_SetCallback = reinterpret_cast<decltype(Original::Logging_SetCallback)>(pSetCB);
+            Logger::debug("[HOOK] Resolved EOS_Logging_SetCallback -> %p", pSetCB);
+        } else {
+            Logger::warn("[HOOK] Could not resolve EOS_Logging_SetCallback (SDK log capture disabled)");
+        }
+
+        // EOS_Logging_SetLogLevel: 2 params (LogCategory, LogLevel) -> @8 on 32-bit
+        void* pSetLvl = GetProcAddress(originalDLL,
+#ifdef _WIN64
+            "EOS_Logging_SetLogLevel"
+#else
+            "_EOS_Logging_SetLogLevel@8"
+#endif
+        );
+        if (pSetLvl) {
+            Original::Logging_SetLogLevel = reinterpret_cast<decltype(Original::Logging_SetLogLevel)>(pSetLvl);
+            Logger::debug("[HOOK] Resolved EOS_Logging_SetLogLevel -> %p", pSetLvl);
+        } else {
+            Logger::warn("[HOOK] Could not resolve EOS_Logging_SetLogLevel (SDK log capture disabled)");
+        }
     }
 
     hooksInitialized = true;
@@ -981,6 +1031,7 @@ bool InitializeHooks(HMODULE originalDLL) {
     Logger::info("[HOOK] All hooks installed successfully!");
     Logger::info("[HOOK] ========================================");
 
+    Logger::flush();
     return true;
 }
 

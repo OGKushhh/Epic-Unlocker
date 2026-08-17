@@ -213,41 +213,49 @@ namespace ScreamAPI
         Logger::debug("DLL init complete");
         Logger::info("Waiting for game to create EOS Platform via EOS_Platform_Create hook");
 
-        if (Config::EnableOverlay()) {
-            Logger::debug("Scheduling overlay initialization with platform polling");
-            // Use a detached thread instead of std::async: std::future blocks in its
-            // destructor until the task completes, and a static local future would block
-            // at DLL unload — after hooks are already torn down. A detached thread exits
-            // freely without blocking destroy().
-            std::thread([hModule]() {
-                const int MAX_WAIT_SECONDS = 60;
-                const int POLL_INTERVAL_MS = 1000;
-                int elapsedSeconds = 0;
+        // Achievement manager init runs UNCONDITIONALLY. Overlay is opt-in
+        // via Config::EnableOverlay(). This decouples achievements from the
+        // overlay so that unlock requests, PipeServer notifications, and EOS
+        // notification subscription all work with the overlay disabled.
+        //
+        // Use a detached thread instead of std::async: std::future blocks in its
+        // destructor until the task completes, and a static local future would block
+        // at DLL unload — after hooks are already torn down. A detached thread exits
+        // freely without blocking destroy().
+        Logger::debug("Scheduling achievement manager initialization with platform polling");
+        std::thread([hModule]() {
+            const int MAX_WAIT_SECONDS = 60;
+            const int POLL_INTERVAL_MS = 1000;
+            int elapsedSeconds = 0;
 
-                Logger::info("Waiting for game to initialize EOS platform...");
+            Logger::info("Waiting for game to initialize EOS platform...");
 
-                while (elapsedSeconds < MAX_WAIT_SECONDS) {
-                    Sleep(POLL_INTERVAL_MS);
-                    elapsedSeconds++;
+            while (elapsedSeconds < MAX_WAIT_SECONDS) {
+                Sleep(POLL_INTERVAL_MS);
+                elapsedSeconds++;
 
-                    if (Util::isEOSPlatformReady()) {
-                        Logger::info("EOS Platform detected as ready after %d seconds", elapsedSeconds);
-                        Logger::info("Initializing overlay and achievement manager");
+                if (Util::isEOSPlatformReady()) {
+                    Logger::info("EOS Platform detected as ready after %d seconds", elapsedSeconds);
+                    if (Config::EnableOverlay()) {
+                        Logger::info("Initializing overlay + achievement manager");
                         AchievementManager::initWithOverlay(hModule);
-                        return;
+                    } else {
+                        Logger::info("Initializing achievement manager (overlay disabled)");
+                        AchievementManager::init();
                     }
-
-                    if (elapsedSeconds % 10 == 0) {
-                        Logger::debug("Still waiting for EOS platform... (%d/%d seconds)",
-                                      elapsedSeconds, MAX_WAIT_SECONDS);
-                    }
+                    return;
                 }
 
-                Logger::error("Timed out waiting for EOS platform after %d seconds", MAX_WAIT_SECONDS);
-                Logger::error("Achievement overlay will not be available");
-                Logger::warn("The game may not use EOS Achievements or requires manual initialization");
-            }).detach();
-        }
+                if (elapsedSeconds % 10 == 0) {
+                    Logger::debug("Still waiting for EOS platform... (%d/%d seconds)",
+                                  elapsedSeconds, MAX_WAIT_SECONDS);
+                }
+            }
+
+            Logger::error("Timed out waiting for EOS platform after %d seconds", MAX_WAIT_SECONDS);
+            Logger::error("Achievements will not be available");
+            Logger::warn("The game may not use EOS Achievements or requires manual initialization");
+        }).detach();
     }
 
     void destroy() {

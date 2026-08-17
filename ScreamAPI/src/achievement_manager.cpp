@@ -6,6 +6,7 @@
 #include "eos-sdk/eos_stats.h"
 #include "PipeServer.h"
 #include "Overlay.h"
+#include "eos_compat.h"
 #include <future>
 #include <atomic>
 #include <thread>
@@ -618,7 +619,7 @@ void EOS_CALL queryDefinitionsComplete(const EOS_Achievements_OnQueryDefinitions
         EOS_Achievements_Definition_Release(OutDefinition);
     }
 
-    // Query player achievements – use legacy version (1) to allow NULL user ID
+    // ApiVersion=1 — backward-compatible (see ForceAchievementsConfiguration)
     EOS_Achievements_QueryPlayerAchievementsOptions QueryAchievementsOptions = {
         1,                             // ApiVersion (legacy)
         getProductUserId()             // UserId (TargetUserId)
@@ -667,7 +668,7 @@ void queryAchievementDefinitions() {
     waitingForUser = false;
     definitionsQueried = false;
 
-    // Legacy API version (1) – matches v1.10.2 behavior
+    // ApiVersion=1 is the safe backward-compatible choice (see ForceAchievementsConfiguration).
     EOS_Achievements_QueryDefinitionsOptions QueryDefinitionsOptions = {
         1,                             // ApiVersion
         productUserId,                 // TargetUserId (LocalUserId in modern)
@@ -710,11 +711,17 @@ void queryAchievementDefinitionsWithRetry(int delayMs) {
 void subscribeToAchievementNotifications() {
     static bool useDeprecated = false;
 
+    // Fix #4: On SDK < 1.14, AddNotifyAchievementsUnlockedV2 doesn't exist.
+    // Skip V2 subscription entirely if the feature is not available.
+    if (!EOS_Compat::isFeatureAvailable("AchievementsUnlockedV2")) {
+        Logger::info("[ACH] SDK < 1.14.0: V2 achievement notifications not available, using deprecated V1");
+        useDeprecated = true;
+    }
+
     if (!useDeprecated) {
         try {
-            EOS_Achievements_AddNotifyAchievementsUnlockedV2Options NotifyOptions = {
-                EOS_ACHIEVEMENTS_ADDNOTIFYACHIEVEMENTSUNLOCKEDV2_API_LATEST
-            };
+            EOS_Achievements_AddNotifyAchievementsUnlockedV2Options NotifyOptions = {};
+            NotifyOptions.ApiVersion = EOS_ACHIEVEMENTS_ADDNOTIFYACHIEVEMENTSUNLOCKEDV2_API_LATEST;
             EOS_Achievements_AddNotifyAchievementsUnlockedV2(getHAchievements(), &NotifyOptions, nullptr, OnAchievementsUnlockedV2);
             Logger::debug("[ACH] Subscribed to V2 unlock notifications");
             return;
@@ -723,11 +730,16 @@ void subscribeToAchievementNotifications() {
         }
     }
 
-    EOS_Achievements_AddNotifyAchievementsUnlockedOptions NotifyOptions = {
-        EOS_ACHIEVEMENTS_ADDNOTIFYACHIEVEMENTSUNLOCKED_API_LATEST
-    };
-    EOS_Achievements_AddNotifyAchievementsUnlocked(getHAchievements(), &NotifyOptions, nullptr, OnAchievementsUnlocked);
-    Logger::debug("[ACH] Subscribed to deprecated unlock notifications");
+    // Deprecated V1 notification subscription
+    try {
+        EOS_Achievements_AddNotifyAchievementsUnlockedOptions NotifyOptions = {
+            EOS_ACHIEVEMENTS_ADDNOTIFYACHIEVEMENTSUNLOCKED_API_LATEST
+        };
+        EOS_Achievements_AddNotifyAchievementsUnlocked(getHAchievements(), &NotifyOptions, nullptr, OnAchievementsUnlocked);
+        Logger::debug("[ACH] Subscribed to deprecated unlock notifications");
+    } catch (ScreamAPI::FunctionNotFoundException) {
+        Logger::warn("[ACH] Deprecated V1 notification function not found either");
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -735,12 +747,31 @@ void subscribeToAchievementNotifications() {
 // ----------------------------------------------------------------------------
 
 void init() {
-    static bool init = false;
+    // Runs with OR without the overlay. The overlay (Overlay::Init, ImGui,
+    // kiero, icon loader) is opt-in via Config::EnableOverlay() and is
+    // wired up only by initWithOverlay(). This function handles the EOS
+    // achievement side: definitions query, player-achievements query,
+    // notification subscription. PipeServer starts automatically once
+    // queryPlayerAchievementsComplete fires, so EpicGUI keeps working
+    // even when the in-game overlay is disabled.
+    static bool initialized = false;
 
-    if (!init && Config::EnableOverlay()) {
-        init = true;
-        Logger::ovrly("Achievement Manager: Initializing...");
+    if (!initialized) {
+        initialized = true;
+        Logger::info("Achievement Manager: Initializing (overlay state irrelevant)");
         Logger::debug("[ACH] init(): Starting achievement manager initialization");
+
+        // Wire up the Overlay::achievements pointer so PipeServer can read
+        // the list even when the overlay is disabled. Overlay::Init (which
+        // also sets this pointer) only runs when Config::EnableOverlay() is
+        // true. Without this, SendAchList and CmdUnlockAll in PipeServer
+        // see a null pointer and send an empty list to the GUI.
+        // The overlay-specific parts (kiero, ImGui, DX hooks) are NOT
+        // initialized here — only the data pointer is set.
+        Overlay::achievements = &achievements;
+        Overlay::unlockAchievement = unlockAchievement;
+        Logger::debug("[ACH] init(): Set Overlay::achievements=%p, unlockAchievement=%p",
+            (void*)Overlay::achievements, (void*)Overlay::unlockAchievement);
 
         queryAchievementDefinitions();
         subscribeToAchievementNotifications();
