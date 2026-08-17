@@ -148,6 +148,7 @@ void findAchievement(const char* achievementID, std::function<void(Overlay_Achie
 // ----------------------------------------------------------------------------
 
 // Tagged-ClientData convention for stat-ingest follow-up calls.
+//
 // When the belt-and-suspenders direct-unlock call is made after a successful
 // stat ingest (inside OnIngestStatComplete), we set bit 0 of the ClientData
 // pointer to mark it as a "stat-ingest follow-up" call. This lets
@@ -164,9 +165,33 @@ void findAchievement(const char* achievementID, std::function<void(Overlay_Achie
 //
 // With the tag, the handler keeps the state in Unlocking for the
 // EOS_NotConfigured case, eliminating the flicker in both UIs.
+//
+// TaggedClientData encapsulates the bit-0 arithmetic so the convention is
+// impossible to misuse (no bare | 1 / & ~1 literals scattered at call sites).
+struct TaggedClientData {
+    void* raw;
+
+    // Mark a pointer as a stat-ingest follow-up call.
+    static TaggedClientData tag(void* p) {
+        return TaggedClientData{ reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(p) | 1) };
+    }
+    // Plain (untagged) pointer.
+    static TaggedClientData plain(void* p) {
+        return TaggedClientData{ p };
+    }
+    // Strip the tag bit and return the original pointer.
+    void* untag() const {
+        return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(raw) & ~uintptr_t(1));
+    }
+    // True if this pointer was tagged via tag().
+    bool isTagged() const {
+        return (reinterpret_cast<uintptr_t>(raw) & 1) != 0;
+    }
+};
 static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* Data) {
-    bool isStatIngestFollowUp = ((uintptr_t)Data->ClientData & 1) != 0;
-    auto achievement = (Overlay_Achievement*)((uintptr_t)Data->ClientData & ~(uintptr_t)1);
+    TaggedClientData cd{Data->ClientData};
+    bool isStatIngestFollowUp = cd.isTagged();
+    auto* achievement = static_cast<Overlay_Achievement*>(cd.untag());
     if (Data->ResultCode == EOS_EResult::EOS_Success) {
         Logger::info("Successfully unlocked the achievement: %s", achievement->AchievementId);
         // State will be flipped to Unlocked by OnAchievementsUnlockedV2 when the
@@ -259,8 +284,8 @@ static void EOS_CALL OnIngestStatComplete(const EOS_Stats_IngestStatCompleteCall
         // the server hasn't yet processed the stat crossing). This prevents the
         // GUI/overlay from flickering back to "Locked" before the server-side
         // unlock notification arrives.
-        void* taggedClientData = (void*)((uintptr_t)achievement | 1);
-        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, taggedClientData, OnUnlockAchievementsComplete);
+        TaggedClientData taggedClientData = TaggedClientData::tag(achievement);
+        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, taggedClientData.raw, OnUnlockAchievementsComplete);
     } else {
         achievement->UnlockState = UnlockState::Locked;
         Logger::error("[STAT] Stat ingest FAILED for achievement: %s. Error: %s",
@@ -392,7 +417,11 @@ void EOS_CALL queryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlay
 
     playerAchievementsQueried = true;
     Logger::debug("[ACH] Player achievements query succeeded");
-    PipeServer::Start(); // achievements list is now complete — open pipe for GUI
+    // NOTE: PipeServer::Start() was previously called here, gated behind
+    // query success. That was a bug: when auth fails (EOS_InvalidAuth),
+    // the GUI could never connect because the pipe never opened.
+    // PipeServer is now started unconditionally in init() so the GUI
+    // can connect immediately, even before the user logs in.
 
     static EOS_Achievements_GetPlayerAchievementCountOptions GetCountOptions{
         EOS_ACHIEVEMENTS_GETPLAYERACHIEVEMENTCOUNT_API_LATEST,
@@ -751,9 +780,10 @@ void init() {
     // kiero, icon loader) is opt-in via Config::EnableOverlay() and is
     // wired up only by initWithOverlay(). This function handles the EOS
     // achievement side: definitions query, player-achievements query,
-    // notification subscription. PipeServer starts automatically once
-    // queryPlayerAchievementsComplete fires, so EpicGUI keeps working
-    // even when the in-game overlay is disabled.
+    // notification subscription. PipeServer starts unconditionally so
+    // EpicGUI can connect immediately — even before the user logs in or
+    // achievement queries succeed. The GUI will see an empty list until
+    // SendUpdatedList() is called from queryPlayerAchievementsComplete.
     static bool initialized = false;
 
     if (!initialized) {
@@ -772,6 +802,15 @@ void init() {
         Overlay::unlockAchievement = unlockAchievement;
         Logger::debug("[ACH] init(): Set Overlay::achievements=%p, unlockAchievement=%p",
             (void*)Overlay::achievements, (void*)Overlay::unlockAchievement);
+
+        // Start the named-pipe server BEFORE any achievement queries fire.
+        // Previously this was called from queryPlayerAchievementsComplete's
+        // success branch, which meant that if the EOS backend rejected auth
+        // (EOS_InvalidAuth — common during offline / partial-login states),
+        // the pipe never opened and the GUI could not connect at all.
+        // Starting here guarantees the GUI can always attach, see the log
+        // path, and send refresh commands even when queries are failing.
+        PipeServer::Start();
 
         queryAchievementDefinitions();
         subscribeToAchievementNotifications();

@@ -1,38 +1,11 @@
 #include "pch.h"
 #include "eos_compat.h"
 #include "ScreamAPI.h"
+#include "eos_resolve.h"
 
 namespace EOS_Compat {
 
 SDKVersion gameSDKVersion;
-
-// Fix #2: Helper to resolve a symbol from the EOS DLL, trying both undecorated
-// and __stdcall decorated names. On 32-bit DLLs compiled with __stdcall,
-// exports are decorated as _FunctionName@paramBytes. GetProcAddress with the
-// undecorated name fails, causing detectSDKVersion to fall back to v1.13.0
-// even when the game uses a newer SDK.
-//
-// paramBytes: total pushed parameter bytes (4 * number_of_params on 32-bit).
-//             Ignored on 64-bit (names are never decorated).
-static void* ResolveEOSExport(HMODULE eosDLL, const char* name, int paramBytes) {
-    // Try undecorated name first (works on 64-bit and undecorated 32-bit DLLs)
-    void* p = GetProcAddress(eosDLL, name);
-    if (p) return p;
-
-#ifndef _WIN64
-    // 32-bit: try __stdcall decorated name _Name@paramBytes
-    if (paramBytes >= 0) {
-        char decorated[256];
-        sprintf_s(decorated, "_%s@%d", name, paramBytes);
-        p = GetProcAddress(eosDLL, decorated);
-        if (p) {
-            Logger::debug("[COMPAT] Resolved %s via decorated name %s", name, decorated);
-            return p;
-        }
-    }
-#endif
-    return nullptr;
-}
 
 bool detectSDKVersion(HMODULE eosDLL) {
         if (!eosDLL) {
@@ -43,7 +16,7 @@ bool detectSDKVersion(HMODULE eosDLL) {
         // Method 1: Try to call EOS_GetVersion() if available
         // EOS_GetVersion takes 0 params -> @0 on 32-bit
         typedef const char* (EOS_CALL* EOS_GetVersion_Func)();
-        auto getVersion = (EOS_GetVersion_Func)ResolveEOSExport(eosDLL, "EOS_GetVersion", 0);
+        auto getVersion = (EOS_GetVersion_Func)EOS_Resolve::resolve(eosDLL, "EOS_GetVersion");
 
         if (getVersion) {
                 const char* versionStr = getVersion();
@@ -67,16 +40,13 @@ bool detectSDKVersion(HMODULE eosDLL) {
                 }
         }
 
-        // Method 2: Probe for version-specific functions
-        // Fix #2: Use ResolveEOSExport with correct param byte counts instead of
-        // raw GetProcAddress. On 32-bit __stdcall DLLs, exports are decorated
-        // (e.g. _EOS_Connect_Logout@4) -> raw GetProcAddress fails -> fallback
-        // to v1.13.0 even when the game uses v1.15.0+.
+        // Method 2: Probe for version-specific functions.
+        // EOS_Resolve::resolve handles both 64-bit (bare name) and 32-bit
+        // __stdcall (_Name@N decoration) transparently.
         Logger::warn("[COMPAT] EOS_GetVersion not available, probing for version-specific functions...");
 
         // v1.18.0+ has EOS_PresenceModification_SetTemplateId (Localized Presence)
-        //   2 params: (EOS_HPresenceModification, const char*) -> @8 on 32-bit
-        if (ResolveEOSExport(eosDLL, "EOS_PresenceModification_SetTemplateId", 8)) {
+        if (EOS_Resolve::resolve(eosDLL, "EOS_PresenceModification_SetTemplateId")) {
                 Logger::info("[COMPAT] Found EOS_PresenceModification_SetTemplateId - SDK is v1.18.0+");
                 gameSDKVersion.major = 1;
                 gameSDKVersion.minor = 18;
@@ -86,8 +56,7 @@ bool detectSDKVersion(HMODULE eosDLL) {
         }
 
         // v1.17.0+ has EOS_Connect_CopyIdToken
-        //   3 params: (Handle, Options*, OutIdToken**) -> @12 on 32-bit
-        if (ResolveEOSExport(eosDLL, "EOS_Connect_CopyIdToken", 12)) {
+        if (EOS_Resolve::resolve(eosDLL, "EOS_Connect_CopyIdToken")) {
                 Logger::info("[COMPAT] Found EOS_Connect_CopyIdToken - SDK is v1.17.0+");
                 gameSDKVersion.major = 1;
                 gameSDKVersion.minor = 17;
@@ -97,8 +66,7 @@ bool detectSDKVersion(HMODULE eosDLL) {
         }
 
         // v1.16.0+ has EOS_Connect_Logout
-        //   4 params: (Handle, Options*, ClientData, Callback) -> @16 on 32-bit
-        if (ResolveEOSExport(eosDLL, "EOS_Connect_Logout", 16)) {
+        if (EOS_Resolve::resolve(eosDLL, "EOS_Connect_Logout")) {
                 Logger::info("[COMPAT] Found EOS_Connect_Logout - SDK is v1.16.0+");
                 gameSDKVersion.major = 1;
                 gameSDKVersion.minor = 16;
@@ -108,8 +76,7 @@ bool detectSDKVersion(HMODULE eosDLL) {
         }
 
         // v1.15.0+ has EOS_Platform_GetDesktopCrossplayStatus
-        //   3 params: (Handle, Options*, OutStatusInfo*) -> @12 on 32-bit
-        if (ResolveEOSExport(eosDLL, "EOS_Platform_GetDesktopCrossplayStatus", 12)) {
+        if (EOS_Resolve::resolve(eosDLL, "EOS_Platform_GetDesktopCrossplayStatus")) {
                 Logger::info("[COMPAT] Found EOS_Platform_GetDesktopCrossplayStatus - SDK is v1.15.0+");
                 gameSDKVersion.major = 1;
                 gameSDKVersion.minor = 15;
@@ -119,8 +86,7 @@ bool detectSDKVersion(HMODULE eosDLL) {
         }
 
         // v1.14.0+ has EOS_Ecom_QueryOwnershipBySandboxIds
-        //   4 params: (Handle, Options*, ClientData, Callback) -> @16 on 32-bit
-        if (ResolveEOSExport(eosDLL, "EOS_Ecom_QueryOwnershipBySandboxIds", 16)) {
+        if (EOS_Resolve::resolve(eosDLL, "EOS_Ecom_QueryOwnershipBySandboxIds")) {
                 Logger::info("[COMPAT] Found EOS_Ecom_QueryOwnershipBySandboxIds - SDK is v1.14.0+");
                 gameSDKVersion.major = 1;
                 gameSDKVersion.minor = 14;
@@ -184,71 +150,39 @@ int getApiVersion(const char* apiName) {
         return -1;  // Unknown API
 }
 
-bool isFeatureAvailable(const char* featureName) {
-        if (!gameSDKVersion.detected) return false;
+// Single source of truth for EOS feature -> SDK version mapping.
+// Adding a new feature flag is now a one-line table edit instead of three
+// scattered changes (isFeatureAvailable branch + logCompatibilityInfo line
+// + caller spelling the string correctly).
+struct FeatureEntry {
+        const char* key;          // programmatic name (callers use this)
+        const char* logLabel;     // human-readable name (for log output)
+        int major, minor, patch;  // SDK version that introduced it
+};
 
-        // Connect Logout (v1.16.0+)
-        if (strcmp(featureName, "ConnectLogout") == 0) {
-                return isVersionOrNewer(1, 16, 0);
-        }
-
-        // Desktop Crossplay (v1.15.0+)
-        if (strcmp(featureName, "DesktopCrossplay") == 0) {
-                return isVersionOrNewer(1, 15, 0);
-        }
-
-        // External Auth Providers - Apple, Google, Oculus, itch.io (v1.14.0+)
-        if (strcmp(featureName, "ExternalAuthProviders") == 0) {
-                return isVersionOrNewer(1, 14, 0);
-        }
-
-        // Hidden Achievements (v1.15.0+)
-        if (strcmp(featureName, "HiddenAchievements") == 0) {
-                return isVersionOrNewer(1, 15, 0);
-        }
-
-        // QueryOwnershipBySandboxIds - newer DLC ownership check path (v1.14.0+)
-        if (strcmp(featureName, "QueryOwnershipBySandboxIds") == 0) {
-                return isVersionOrNewer(1, 14, 0);
-        }
-
-        // RTC Options in Platform (v1.14.0+)
-        if (strcmp(featureName, "RTCOptions") == 0) {
-                return isVersionOrNewer(1, 14, 0);
-        }
-
-        // Tick Budget (v1.15.0+)
-        if (strcmp(featureName, "TickBudget") == 0) {
-                return isVersionOrNewer(1, 15, 0);
-        }
-
-        // Integrated Platform (v1.17.0+)
-        if (strcmp(featureName, "IntegratedPlatform") == 0) {
-                return isVersionOrNewer(1, 17, 0);
-        }
-
-        // Task Network Timeout (v1.17.0+)
-        if (strcmp(featureName, "TaskNetworkTimeout") == 0) {
-                return isVersionOrNewer(1, 17, 0);
-        }
-
-        // Localized Presence (v1.18.0+)
-        if (strcmp(featureName, "LocalizedPresence") == 0) {
-                return isVersionOrNewer(1, 18, 0);
-        }
-
-        // V2 Achievement Notifications (v1.14.0+)
+static const FeatureEntry kFeatures[] = {
+        {"ConnectLogout",                "Connect Logout",          1, 16, 0},
+        {"DesktopCrossplay",             "Desktop Crossplay",       1, 15, 0},
+        {"ExternalAuthProviders",        "External Auth Providers", 1, 14, 0},
+        {"HiddenAchievements",           "Hidden Achievements",     1, 15, 0},
+        {"QueryOwnershipBySandboxIds",   "OwnershipBySandboxIds",   1, 14, 0},
+        {"RTCOptions",                   "RTC Options",             1, 14, 0},
+        {"TickBudget",                   "Tick Budget",             1, 15, 0},
+        {"IntegratedPlatform",           "Integrated Platform",     1, 17, 0},
+        {"TaskNetworkTimeout",           "Task Network Timeout",    1, 17, 0},
+        {"LocalizedPresence",            "Localized Presence",      1, 18, 0},
         // Fix #4: EOS_Achievements_AddNotifyAchievementsUnlockedV2 does not
         // exist in SDK 1.13.0. This feature flag gates hook installation.
-        if (strcmp(featureName, "AchievementsUnlockedV2") == 0) {
-                return isVersionOrNewer(1, 14, 0);
-        }
+        {"AchievementsUnlockedV2",       "AchievementsUnlockedV2",  1, 14, 0},
+        {"CopyAchievementDefinitionV2",  "CopyDefinitionV2",        1, 14, 0},
+};
 
-        // CopyAchievementDefinitionV2 (v1.14.0+)
-        if (strcmp(featureName, "CopyAchievementDefinitionV2") == 0) {
-                return isVersionOrNewer(1, 14, 0);
+bool isFeatureAvailable(const char* featureName) {
+        if (!gameSDKVersion.detected) return false;
+        for (const auto& f : kFeatures) {
+                if (strcmp(featureName, f.key) == 0)
+                        return isVersionOrNewer(f.major, f.minor, f.patch);
         }
-
         return false;
 }
 
@@ -278,18 +212,10 @@ void logCompatibilityInfo() {
 
         Logger::info("[COMPAT] ");
         Logger::info("[COMPAT] Feature Availability:");
-        Logger::info("[COMPAT]   Connect Logout:          %s", isFeatureAvailable("ConnectLogout") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Desktop Crossplay:       %s", isFeatureAvailable("DesktopCrossplay") ? "YES" : "NO");
-        Logger::info("[COMPAT]   External Auth Providers: %s", isFeatureAvailable("ExternalAuthProviders") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Hidden Achievements:     %s", isFeatureAvailable("HiddenAchievements") ? "YES" : "NO");
-        Logger::info("[COMPAT]   RTC Options:             %s", isFeatureAvailable("RTCOptions") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Tick Budget:             %s", isFeatureAvailable("TickBudget") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Integrated Platform:     %s", isFeatureAvailable("IntegratedPlatform") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Task Network Timeout:    %s", isFeatureAvailable("TaskNetworkTimeout") ? "YES" : "NO");
-        Logger::info("[COMPAT]   Localized Presence:      %s", isFeatureAvailable("LocalizedPresence") ? "YES" : "NO");
-        Logger::info("[COMPAT]   OwnershipBySandboxIds:   %s", isFeatureAvailable("QueryOwnershipBySandboxIds") ? "YES" : "NO");
-        Logger::info("[COMPAT]   AchievementsUnlockedV2:  %s", isFeatureAvailable("AchievementsUnlockedV2") ? "YES" : "NO");
-        Logger::info("[COMPAT]   CopyDefinitionV2:        %s", isFeatureAvailable("CopyAchievementDefinitionV2") ? "YES" : "NO");
+        for (const auto& f : kFeatures) {
+                Logger::info("[COMPAT]   %-24s %s",
+                        f.logLabel, isFeatureAvailable(f.key) ? "YES" : "NO");
+        }
 
         Logger::info("[COMPAT] ");
         Logger::info("[COMPAT] API Versions:");

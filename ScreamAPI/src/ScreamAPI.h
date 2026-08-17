@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "Config.h"
+#include "eos_resolve.h"
 #include <Overlay_types.h>
 #include <eos-sdk/eos_sdk.h>
 
@@ -19,28 +20,19 @@ struct proxyTraits{
 	using funcType = RetType(EOS_CALL*)(ArgTypes...);
 };
 
-// A function that returns a type-safe reference to the requested EOS SDK function
+// A function that returns a type-safe reference to the requested EOS SDK function.
+// Delegates to EOS_Resolve::resolve so 32-bit __stdcall decoration is handled
+// by a single shared walker (was previously a single-guess _Name@4*N that
+// broke if any parameter wasn't 4 bytes).
 template <typename RetType, typename... ArgTypes>
 auto proxyFunction(RetType(EOS_CALL*)(ArgTypes...), LPCSTR rawFunctionName){
 	using funcType = typename proxyTraits<RetType, ArgTypes...>::funcType;
-
-#ifdef _WIN64
-	std::string functionName = rawFunctionName;
-#else
-	// Need to decorate function name according to __stdcall convention:
-	// https://docs.microsoft.com/en-us/cpp/build/reference/decorated-names?view=vs-2019#FormatC
-	std::stringstream ss;
-	ss << "_" << rawFunctionName << "@" << 4 * sizeof...(ArgTypes);
-	std::string functionName = ss.str();
-#endif
-	// Get C-style pointer to function
-	auto funcPtr = GetProcAddress(originalDLL, functionName.c_str());
+	auto funcPtr = EOS_Resolve::resolve(originalDLL, rawFunctionName);
 	if(funcPtr){
-		Logger::debug("Successfully proxied function: %s", functionName.c_str());
-		// Return type-safe version of that function pointer
+		Logger::debug("Successfully proxied function: %s", rawFunctionName);
 		return reinterpret_cast<funcType>(funcPtr);
 	} else{
-		Logger::error("Failed to proxy function: %s", functionName.c_str());
+		Logger::error("Failed to proxy function: %s", rawFunctionName);
 		throw FunctionNotFoundException();
 	}
 

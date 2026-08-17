@@ -4,6 +4,7 @@
 #include "achievement_manager.h"
 #include "util.h"
 #include "eos_compat.h"
+#include "eos_resolve.h"
 #include "Logger.h"
 #include "MinHook.h"
 #include "dlc_catalog.h"
@@ -156,91 +157,53 @@ namespace Original {
     decltype(&EOS_Logging_SetLogLevel) Logging_SetLogLevel = nullptr;
 }
 
-// Helper to get the decorated name for 32-bit
-static std::string GetDecoratedName(const char* baseName) {
-#ifdef _WIN64
-    return std::string(baseName);
-#else
-    std::stringstream ss;
-    ss << "_" << baseName << "@";
-    if (strcmp(baseName, "EOS_Platform_Create") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_Release") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_Tick") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetConnectInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetAuthInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetAchievementsInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetEcomInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetStatsInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Platform_GetUIInterface") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Achievements_QueryDefinitions") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Achievements_QueryPlayerAchievements") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Achievements_UnlockAchievements") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Achievements_AddNotifyAchievementsUnlockedV2") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Achievements_AddNotifyAchievementsUnlocked") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Ecom_QueryOwnership") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Ecom_QueryOwnershipBySandboxIds") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Ecom_QueryOwnershipToken") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Ecom_QueryEntitlements") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Ecom_GetEntitlementsCount") == 0) ss << "8";
-    else if (strcmp(baseName, "EOS_Ecom_CopyEntitlementByIndex") == 0) ss << "12";
-    else if (strcmp(baseName, "EOS_Ecom_Entitlement_Release") == 0) ss << "4";
-    else if (strcmp(baseName, "EOS_Connect_Login") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Connect_GetLoggedInUserByIndex") == 0) ss << "8";
-    else if (strcmp(baseName, "EOS_Connect_AddNotifyLoginStatusChanged") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Auth_Login") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Auth_GetLoggedInAccountByIndex") == 0) ss << "8";
-    else if (strcmp(baseName, "EOS_Auth_AddNotifyLoginStatusChanged") == 0) ss << "16";
-    else if (strcmp(baseName, "EOS_Metrics_BeginPlayerSession") == 0) ss << "8";
-    else if (strcmp(baseName, "EOS_Metrics_EndPlayerSession") == 0) ss << "8";
-    else {
-        Logger::warn("[HOOK] Unknown decorated name for: %s", baseName);
-        ss << "16";
-    }
-    return ss.str();
-#endif
+// Resolve an EOS SDK export by name. Returns the function pointer, or
+// nullptr if not found. Delegates to EOS_Resolve::resolve (shared with
+// ScreamAPI::proxyFunction and EOS_Compat::detectSDKVersion) so there is
+// exactly one decoration walker in the codebase.
+static void* ResolveExport(HMODULE module, const char* baseName) {
+    return EOS_Resolve::resolve(module, baseName);
 }
 
 #define INSTALL_HOOK(module, funcName, hookFunc, originalPtr) \
     do { \
-        std::string targetName = GetDecoratedName(#funcName); \
-        void* targetFunc = GetProcAddress(module, targetName.c_str()); \
+        void* targetFunc = ResolveExport(module, #funcName); \
         if (targetFunc) { \
             MH_STATUS status = MH_CreateHook(targetFunc, (void*)&hookFunc, (void**)&originalPtr); \
             if (status == MH_OK) { \
                 status = MH_EnableHook(targetFunc); \
                 if (status == MH_OK) { \
-                    Logger::info("[HOOK] Successfully hooked: %s", targetName.c_str()); \
+                    Logger::info("[HOOK] Successfully hooked: %s", #funcName); \
                 } else { \
-                    Logger::error("[HOOK] Failed to enable hook for %s: %d", targetName.c_str(), status); \
+                    Logger::error("[HOOK] Failed to enable hook for %s: %d", #funcName, status); \
                     return false; \
                 } \
             } else { \
-                Logger::error("[HOOK] Failed to create hook for %s: %d", targetName.c_str(), status); \
+                Logger::error("[HOOK] Failed to create hook for %s: %d", #funcName, status); \
                 return false; \
             } \
         } else { \
-            Logger::warn("[HOOK] Function not found (may be optional): %s", targetName.c_str()); \
+            Logger::warn("[HOOK] Function not found (may be optional): %s", #funcName); \
         } \
     } while(0)
 
 #define INSTALL_HOOK_OPTIONAL(module, funcName, hookFunc, originalPtr) \
     do { \
-        std::string targetName = GetDecoratedName(#funcName); \
-        void* targetFunc = GetProcAddress(module, targetName.c_str()); \
+        void* targetFunc = ResolveExport(module, #funcName); \
         if (targetFunc) { \
             MH_STATUS status = MH_CreateHook(targetFunc, (void*)&hookFunc, (void**)&originalPtr); \
             if (status == MH_OK) { \
                 status = MH_EnableHook(targetFunc); \
                 if (status == MH_OK) { \
-                    Logger::info("[HOOK] Successfully hooked (optional): %s", targetName.c_str()); \
+                    Logger::info("[HOOK] Successfully hooked (optional): %s", #funcName); \
                 } else { \
-                    Logger::warn("[HOOK] Failed to enable optional hook for %s: %d (continuing)", targetName.c_str(), status); \
+                    Logger::warn("[HOOK] Failed to enable optional hook for %s: %d (continuing)", #funcName, status); \
                 } \
             } else { \
-                Logger::warn("[HOOK] Failed to create optional hook for %s: %d (continuing)", targetName.c_str(), status); \
+                Logger::warn("[HOOK] Failed to create optional hook for %s: %d (continuing)", #funcName, status); \
             } \
         } else { \
-            Logger::warn("[HOOK] Optional function not found: %s (continuing)", targetName.c_str()); \
+            Logger::warn("[HOOK] Optional function not found: %s (continuing)", #funcName); \
         } \
     } while(0)
 
@@ -991,35 +954,18 @@ bool InitializeHooks(HMODULE originalDLL) {
     // directly from the Platform_Create hook to register SdkLogCallback).
     // Using GetProcAddress avoids the LNK2001 from the LinkerExports
     // forwarder pragma (which only re-exports, does not make importable).
-    // On 32-bit __stdcall, exports are decorated (_Name@paramBytes),
-    // so we must use the decorated names for GetProcAddress to succeed.
+    // ResolveExport handles both 64-bit (bare name) and 32-bit __stdcall
+    // (_Name@N decoration) transparently, so the #ifdef _WIN64 duplication
+    // that used to live here is gone.
     {
-        // EOS_Logging_SetCallback: 1 param (Callback) -> @4 on 32-bit
-        void* pSetCB = GetProcAddress(originalDLL,
-#ifdef _WIN64
-            "EOS_Logging_SetCallback"
-#else
-            "_EOS_Logging_SetCallback@4"
-#endif
-        );
-        if (pSetCB) {
+        if (void* pSetCB = ResolveExport(originalDLL, "EOS_Logging_SetCallback")) {
             Original::Logging_SetCallback = reinterpret_cast<decltype(Original::Logging_SetCallback)>(pSetCB);
-            Logger::debug("[HOOK] Resolved EOS_Logging_SetCallback -> %p", pSetCB);
         } else {
             Logger::warn("[HOOK] Could not resolve EOS_Logging_SetCallback (SDK log capture disabled)");
         }
 
-        // EOS_Logging_SetLogLevel: 2 params (LogCategory, LogLevel) -> @8 on 32-bit
-        void* pSetLvl = GetProcAddress(originalDLL,
-#ifdef _WIN64
-            "EOS_Logging_SetLogLevel"
-#else
-            "_EOS_Logging_SetLogLevel@8"
-#endif
-        );
-        if (pSetLvl) {
+        if (void* pSetLvl = ResolveExport(originalDLL, "EOS_Logging_SetLogLevel")) {
             Original::Logging_SetLogLevel = reinterpret_cast<decltype(Original::Logging_SetLogLevel)>(pSetLvl);
-            Logger::debug("[HOOK] Resolved EOS_Logging_SetLogLevel -> %p", pSetLvl);
         } else {
             Logger::warn("[HOOK] Could not resolve EOS_Logging_SetLogLevel (SDK log capture disabled)");
         }
