@@ -36,12 +36,12 @@ Add a `GameInfo` packet (DLL→GUI) carrying: process name, `EOS_SDK_GetVersion(
 
 **Status:** Implemented in batch 1. End-to-end: DLL captures `Progress` + builds "12/50 kills" label from `StatInfo[]` → pipe protocol carries both → Rust parses → TS adapter → progress bar UI.
 
-### A4. Player stats tab ⬜ Not yet
+### A4. Player stats tab ⬜ Not yet [CODE VERIFIED: NOT IMPLEMENTED]
 Hook `EOS_Stats_IngestStat` (we already call it; we don't intercept it) and `EOS_Stats_QueryStats`. Add `StatList` + `StatUpdate` packets. Surface as a new tab with stat name / current value / last-ingested value / a tiny sparkline. Useful for understanding what stat-gated achievements actually look at.
 
 **Status:** Not yet. Lower priority now that A3 surfaces the relevant stat info per-achievement.
 
-### A5. EOS auth/token inspector ✅ Done
+### A5. EOS auth/token inspector ⬜ Not yet [CODE VERIFIED: MISSING — Auth_Login logs only, no AuthInfo packet, no token/expiry capture]
 Hook `EOS_Auth_CopyUserAuthToken` (already-installed `Auth_Login` hook captures the moment). Dump token type, expiry, refresh token presence, accountId into a "Session" panel in Settings. Massively useful when users complain "DLC doesn't unlock" — 9 times out of 10 the auth token has expired.
 
 **Status:** Implemented. `AuthInfo` packet (0x06) sent every 30s from `Platform_Tick` (via `EOS_Auth_CopyUserAuthToken` + `EOS_Auth_GetLoginStatus`). Settings tab shows account ID, login status, token expiry (ISO 8601 + POSIX epoch), and a live countdown timer. When the timer reaches 0, a red warning banner appears: "Token expired — achievements may stop unlocking. Restart the game to re-authenticate."
@@ -75,7 +75,7 @@ Hook `EOS_Sanctions_QueryActivePlayerSanctions` to always return 0 sanctions. Le
 
 ## C. Networking / social (medium effort, big feature surface)
 
-### C1. Friends list + presence in the GUI ✅ Done
+### C1. Friends list + presence in the GUI ⬜ Not yet [CODE VERIFIED: MISSING — no friends hooks installed, no FriendsList packet]
 Hook `EOS_Friends_QueryFriends` + `EOS_Presence_QueryPresence` + `_AddNotifyFriendsUpdate` + `_AddNotifyOnPresenceChanged`. New `FriendsList` packet. Render as a new tab. Lets the user see who's online / what they're playing without alt-tabbing to the Epic overlay.
 
 **Status:** Implemented as a new Friends tab. `EOS_Platform_GetFriendsInterface` + `EOS_Friends_QueryFriends` hooked (interface handle cached). `FriendsList` packet (0x07) sent from the QueryFriends callback. `CmdQueryFriends` (0x14) lets the GUI trigger a refresh. Tab shows total/online/friends counts, filter pills (All/Online/Friends), per-friend status dot + presence label + friend status. Read-only — no friend requests/accept/reject from the GUI (use the Epic overlay for those).
@@ -86,7 +86,7 @@ Hook `EOS_Friends_QueryFriends` + `EOS_Presence_QueryPresence` + `_AddNotifyFrie
 
 **Status:** Not yet. Low effort (~15 min).
 
-### C3. Custom rich presence ✅ Done
+### C3. Custom rich presence ⬜ Not yet [CODE VERIFIED: MISSING — no presence hooks, no CmdSetPresence packet]
 `EOS_Presence_SetStatus` + `EOS_PresenceModification_SetRawRichText` / `_SetData`. Lets the user set a custom "Playing: <whatever>" string on their Epic profile from the GUI. Pure fun feature.
 
 **Status:** Implemented in Settings tab. `EOS_Platform_GetPresenceInterface` hooked (handle cached). `CmdSetPresence` (0x13) packet carries status enum + raw text (max 255 chars, enforced on both Rust and C++ sides). The DLL dispatcher uses `EOS_Presence_CreatePresenceModification` + `SetStatus` + `SetRawRichText` + `SetPresence` (the standard 4-step pattern).
@@ -158,7 +158,7 @@ Hold a hotkey, mouse-driven radial menu pops up with the last 8 locked achieveme
 
 **Status:** Removed in batch 2. The user explicitly preferred X = close = exit. The `tray-icon` Cargo feature was removed, the `TrayIconBuilder` code was stripped from `lib.rs`, and the `CloseRequested` handler that called `prevent_close()` + `hide()` was removed. Closing the window now exits the process. The pipe reader is a detached tokio task; killing the GUI process also kills it, which is fine — the next launch reconnects.
 
-### G2. Real settings persistence ✅ Done
+### G2. Real settings persistence 🟡 Partial [CODE VERIFIED: Config.h init exists, JSON persistence code not visible in DLL source; GUI (Rust) may have it]
 `SettingsTab`'s auto-refresh / connect-on-launch / max-log-lines controls are visual-only. Wire them via the FS plugin (already installed, never imported) to a JSON config next to the log file.
 
 **Status:** Implemented in batch 1. `settings.rs` module + `get_settings` / `save_settings` Tauri commands. JSON file at `<app_local_data_dir>/settings.json`. Atomic save (write to `.tmp` then rename).
