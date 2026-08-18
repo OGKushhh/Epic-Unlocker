@@ -182,17 +182,17 @@ Let the user save "unlock these achievements, leave these locked" as a JSON file
 
 ---
 
-## H. Anti-cheat (high risk, ban-prone — listed for completeness)
+## H. Anti-cheat (high risk, ban-prone)
 
-### H1. AntiCheatClient message silencer ⬜ Not yet (advise against)
+### H1. AntiCheatClient message silencer ⬜ Not yet
 Hook `EOS_AntiCheatClient_ReceiveMessageFromServer` / `_AddNotifyPeerActionRequired` / `_AddNotifyClientIntegrityViolated` to suppress "integrity violated" notifications.
 
-**Status:** Not yet. **Strongly advise against shipping this** — Epic Anti-Cheat is server-authoritative and this is the kind of thing that gets accounts hardware-banned.
+**Status:** Not yet. — Epic Anti-Cheat is server-authoritative.
 
 ### H2. AntiCheatServer telemetry forger ⬜ Not yet
 Only relevant if the user is hosting a server.
 
-**Status:** Not yet. Same risk as H1, plus messing with other players' experience.
+**Status:** Not yet.
 
 ---
 
@@ -203,8 +203,6 @@ Only relevant if the user is hosting a server.
 3. **"Unlock correctness + overlay hygiene" PR:** B1 ✅ + C2 ⬜
 4. **Batch 2 (current):** A2 ✅ + A5 ✅ + C1 ✅ + C3 ✅ + G4 ✅ + G1 ❌(removed)
 5. **Bigger swing** based on what users actually ask for: D1 (save browser), F1 (overlay DLC panel), or revisit C4 (custom invites) if a specific game need arises
-
-**Skip entirely:** H1, H2 — these turn "DLC unlocker" into "ban magnet" in Epic's enforcement queue. **Treat with caution:** B4 (sanctions blanker).
 
 THE FUTURE FEATURES:
 ## I. Ownership Spoofing + Online Emulation (High Effort, High Reward)
