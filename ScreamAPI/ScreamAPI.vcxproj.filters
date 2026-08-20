@@ -173,6 +173,9 @@
     <ClInclude Include="src\eos_compat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\eos_intercept.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\eos_hooks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -229,6 +232,9 @@
     <ClCompile Include="src\pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\eos_intercept.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -263,6 +269,9 @@
       <Filter>Source Files\eos-impl</Filter>
     </ClCompile>
     <ClCompile Include="src\eos-impl\eos_stats.cpp">
+      <Filter>Source Files\eos-impl</Filter>
+    </ClCompile>
+    <ClCompile Include="src\eos-impl\eos_metrics.cpp">
       <Filter>Source Files\eos-impl</Filter>
     </ClCompile>
     <ClCompile Include="src\achievement_manager.cpp">

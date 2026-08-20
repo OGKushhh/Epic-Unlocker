@@ -8,6 +8,7 @@
 #include "eos-sdk/eos_ecom.h"
 #include "eos-sdk/eos_stats.h"
 #include "MinHook.h"
+#include "eos_intercept.h"
 
 namespace EOS_Hooks {
 
@@ -36,9 +37,12 @@ namespace Original {
     
     // Ecom
     extern decltype(&EOS_Ecom_QueryOwnership) Ecom_QueryOwnership;
+    extern decltype(&EOS_Ecom_QueryOwnershipBySandboxIds) Ecom_QueryOwnershipBySandboxIds;
+    extern decltype(&EOS_Ecom_QueryOwnershipToken) Ecom_QueryOwnershipToken;
     extern decltype(&EOS_Ecom_QueryEntitlements) Ecom_QueryEntitlements;
     extern decltype(&EOS_Ecom_GetEntitlementsCount) Ecom_GetEntitlementsCount;
     extern decltype(&EOS_Ecom_CopyEntitlementByIndex) Ecom_CopyEntitlementByIndex;
+    extern decltype(&EOS_Ecom_Entitlement_Release) Ecom_Entitlement_Release;
     
     // Connect
     extern decltype(&EOS_Connect_Login) Connect_Login;
@@ -51,6 +55,14 @@ namespace Original {
     extern decltype(&EOS_Auth_GetLoggedInAccountByIndex) Auth_GetLoggedInAccountByIndex;
     // Optional auth login status notification
     extern decltype(&EOS_Auth_AddNotifyLoginStatusChanged) Auth_AddNotifyLoginStatusChanged;
+
+    // Metrics
+    extern decltype(&EOS_Metrics_BeginPlayerSession) Metrics_BeginPlayerSession;
+    extern decltype(&EOS_Metrics_EndPlayerSession) Metrics_EndPlayerSession;
+
+    // Logging (resolved via GetProcAddress, not hooked)
+    extern decltype(&EOS_Logging_SetCallback) Logging_SetCallback;
+    extern decltype(&EOS_Logging_SetLogLevel) Logging_SetLogLevel;
 }
 
 // Hook function declarations (our implementations)
@@ -78,9 +90,12 @@ namespace Hooks {
     
     // Ecom
     void EOS_CALL Ecom_QueryOwnership(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipCallback CompletionDelegate);
+    void EOS_CALL Ecom_QueryOwnershipBySandboxIds(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipBySandboxIdsOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipBySandboxIdsCallback CompletionDelegate);
+    void EOS_CALL Ecom_QueryOwnershipToken(EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipTokenOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipTokenCallback CompletionDelegate);
     void EOS_CALL Ecom_QueryEntitlements(EOS_HEcom Handle, const EOS_Ecom_QueryEntitlementsOptions* Options, void* ClientData, const EOS_Ecom_OnQueryEntitlementsCallback CompletionDelegate);
     uint32_t EOS_CALL Ecom_GetEntitlementsCount(EOS_HEcom Handle, const EOS_Ecom_GetEntitlementsCountOptions* Options);
     EOS_EResult EOS_CALL Ecom_CopyEntitlementByIndex(EOS_HEcom Handle, const EOS_Ecom_CopyEntitlementByIndexOptions* Options, EOS_Ecom_Entitlement** OutEntitlement);
+    void EOS_CALL Ecom_Entitlement_Release(EOS_Ecom_Entitlement* Entitlement);
     
     // Connect
     void EOS_CALL Connect_Login(EOS_HConnect Handle, const EOS_Connect_LoginOptions* Options, void* ClientData, const EOS_Connect_OnLoginCallback CompletionDelegate);
@@ -93,6 +108,10 @@ namespace Hooks {
     EOS_EpicAccountId EOS_CALL Auth_GetLoggedInAccountByIndex(EOS_HAuth Handle, int32_t Index);
     // Optional auth login status notification
     void EOS_CALL Auth_AddNotifyLoginStatusChanged(EOS_HAuth Handle, const EOS_Auth_AddNotifyLoginStatusChangedOptions* Options, void* ClientData, const EOS_Auth_OnLoginStatusChangedCallback NotificationFn);
+
+    // Metrics
+    EOS_EResult EOS_CALL Metrics_BeginPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_BeginPlayerSessionOptions* Options);
+    EOS_EResult EOS_CALL Metrics_EndPlayerSession(EOS_HMetrics Handle, const EOS_Metrics_EndPlayerSessionOptions* Options);
 }
 
 // Initialization and cleanup
@@ -101,6 +120,7 @@ void ShutdownHooks();
 bool AreHooksActive();
 
 // GUI thread-safe unlock queue — call from any thread, drained on game thread
+// Delegates to Intercept::QueueUnlock
 void QueueUnlock(const char* id);
 
 } // namespace EOS_Hooks

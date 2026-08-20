@@ -12,6 +12,7 @@
 #include "eos_hooks.h"
 #include "util.h"
 #include "eos_compat.h"
+#include "eos_intercept.h"
 
 #include <thread>
 #include <atomic>
@@ -20,9 +21,9 @@
 #include <mutex>
 #include <map>
 
-// Defined in eos_ecom_entitlements.cpp — returns a thread-safe snapshot of the
-// catalog cache populated by DlcCatalog::fetch() during QueryEntitlements.
-extern std::map<std::string, std::string> GetCatalogSnapshot();
+// GetCatalogSnapshot lives in namespace Intercept (eos_intercept.h)
+// Returns a thread-safe snapshot of the catalog cache populated by
+// DlcCatalog::fetch() during QueryEntitlements.
 
 namespace PipeServer {
 
@@ -173,7 +174,7 @@ static void SendGameInfo(HANDLE pipe) {
 
 // ── Send DLC catalog (id→title map) to newly connected client ─────────────────
 static void SendDlcCatalog(HANDLE pipe) {
-    auto catalog = GetCatalogSnapshot();
+    auto catalog = Intercept::GetCatalogSnapshot();
     if (catalog.empty()) {
         Logger::info("[PIPE] DLC catalog not yet fetched — skipping DlcCatalog packet");
         return;
