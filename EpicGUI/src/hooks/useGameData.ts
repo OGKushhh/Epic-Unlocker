@@ -41,6 +41,7 @@ import {
   clearIconCache,
   type IconFetchResult,
 } from "../lib/api";
+import { listen } from "@tauri-apps/api/event";
 import type {
   RustAchievement,
   RustDlcEntry,
@@ -292,8 +293,6 @@ export function useGameData(): GameDataState {
 
     (async () => {
       try {
-        const { listen } = await import("@tauri-apps/api/event");
-
         const unsubs = await Promise.all([
           listen<boolean>("connection-changed", (event) => {
             if (event.payload) {

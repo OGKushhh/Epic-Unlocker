@@ -485,7 +485,7 @@ async fn upload_file_in_chunks(
     for (chunk_idx, chunk_start) in (0..contents.len()).step_by(CHUNK_SIZE).enumerate() {
         let chunk_end = std::cmp::min(chunk_start + CHUNK_SIZE, contents.len());
         let chunk_data = &contents[chunk_start..chunk_end];
-        let chunk_hash = sha256_hex(chunk_data);
+        let _chunk_hash = sha256_hex(chunk_data);
         let is_last = chunk_idx == total_chunks - 1;
 
         // Progress for this chunk
