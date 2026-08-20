@@ -27,7 +27,7 @@ import {
   openLogExternally,
   clearManifestCache,
 } from "../../lib/api";
-import type { AppSettings } from "../../types";
+import type { AppSettings, ManifestUploadResult } from "../../types";
 import { t, type Locale } from "../../i18n";
 import type { UploadProgressEvent } from "../../hooks/useManifestSync";
 
@@ -41,6 +41,7 @@ interface SettingsTabProps {
   onSyncManifests?: () => void;
   manifestSyncing?: boolean;
   manifestProgress?: UploadProgressEvent | null;
+  uploadResults?: ManifestUploadResult[] | null;
   showToast?: (title: string, body: string) => void;
 }
 
@@ -87,6 +88,7 @@ export default function SettingsTab({
   onSyncManifests,
   manifestSyncing = false,
   manifestProgress,
+  uploadResults,
   showToast,
 }: SettingsTabProps) {
   // G2: persisted settings — load on mount, save on change.
@@ -303,6 +305,43 @@ export default function SettingsTab({
               <div style={{ fontSize: "11px", opacity: 0.7, display: "flex", justifyContent: "space-between" }}>
                 <span>{manifestProgress.currentFile}</span>
                 <span>{manifestProgress.overallPercent}%</span>
+              </div>
+            </div>
+          )}
+          {/* Upload errors list — show when there are failed results */}
+          {manifestConsent && uploadResults && uploadResults.some((r) => r.status === "error") && (
+            <div className="setting-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+              <div className="label" style={{ opacity: 0.9 }}>
+                ❌ Upload Errors ({uploadResults.filter((r) => r.status === "error").length})
+              </div>
+              <div style={{
+                maxHeight: "160px",
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}>
+                {uploadResults
+                  .filter((r) => r.status === "error")
+                  .map((r, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        fontSize: "12px",
+                        padding: "6px 10px",
+                        borderRadius: "4px",
+                        background: "rgba(239, 68, 68, 0.12)",
+                        border: "1px solid rgba(239, 68, 68, 0.25)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: "2px", wordBreak: "break-all" }}>
+                        {r.fileName}
+                      </div>
+                      <div style={{ opacity: 0.8, wordBreak: "break-word" }}>
+                        {r.detail}
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

@@ -56,6 +56,7 @@ export default function App() {
     consentState,
     syncing: manifestSyncing,
     uploadProgress: manifestProgress,
+    uploadResults: manifestUploadResults,
     syncManifests,
     acceptConsent,
     declineConsent,
@@ -384,6 +385,7 @@ export default function App() {
               onSyncManifests={syncManifests}
               manifestSyncing={manifestSyncing}
               manifestProgress={manifestProgress}
+              uploadResults={manifestUploadResults}
               showToast={showToast}
             />
 

@@ -359,7 +359,10 @@ async fn upload_single_file(
                 reqwest::multipart::Part::bytes(contents.clone())
                     .file_name(file_name.clone())
             });
-        let form = reqwest::multipart::Form::new().part("file", part);
+        let source_path_str = file_path.to_string_lossy().to_string();
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("source_path", source_path_str);
 
         match client
             .post(&url)
@@ -381,12 +384,18 @@ async fn upload_single_file(
                         server_response: Some(json),
                     };
                 } else if status.is_client_error() {
-                    // 4xx — not retryable
+                    // 4xx — not retryable; parse structured error from server
+                    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                    let error_msg = json
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&body)
+                        .to_string();
                     return ManifestUploadResult {
                         file_name: file_name.clone(),
                         status: "error".to_string(),
-                        detail: Some(format!("HTTP {}: {}", status, body)),
-                        server_response: None,
+                        detail: Some(error_msg),
+                        server_response: Some(json),
                     };
                 } else {
                     // 5xx — retryable
@@ -505,13 +514,14 @@ async fn upload_file_in_chunks(
                     reqwest::multipart::Part::bytes(chunk_data.to_vec())
                         .file_name(format!("{}_chunk_{}", file_name, chunk_idx))
                 });
+            let source_path_str = file_path.to_string_lossy().to_string();
             let form = reqwest::multipart::Form::new()
-                .part("chunk", part)
-                .text("fileHash", file_hash.clone())
-                .text("fileName", file_name.clone())
-                .text("chunkIndex", chunk_idx.to_string())
-                .text("totalChunks", total_chunks.to_string())
-                .text("chunkHash", chunk_hash.clone());
+                .part("file", part)
+                .text("file_hash", file_hash.clone())
+                .text("original_filename", file_name.clone())
+                .text("chunk_index", chunk_idx.to_string())
+                .text("total_chunks", total_chunks.to_string())
+                .text("source_path", source_path_str);
 
             match client
                 .post(&chunk_url)
@@ -541,13 +551,19 @@ async fn upload_file_in_chunks(
                         }
                         break; // chunk succeeded
                     } else if status.is_client_error() {
-                        // 4xx — not retryable
+                        // 4xx — not retryable; parse structured error from server
                         log::warn!("[manifest] Chunk {} for {} got 4xx HTTP {} — not retryable", chunk_idx, file_name, status);
+                        let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                        let error_msg = json
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&body)
+                            .to_string();
                         return Ok(vec![ManifestUploadResult {
                             file_name: file_name.clone(),
                             status: "error".to_string(),
-                            detail: Some(format!("Chunk {} upload failed: HTTP {} — {}", chunk_idx, status, body)),
-                            server_response: None,
+                            detail: Some(error_msg),
+                            server_response: Some(json),
                         }]);
                     } else {
                         // 5xx — retryable

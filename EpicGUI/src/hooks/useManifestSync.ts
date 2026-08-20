@@ -19,7 +19,7 @@ import {
   uploadManifests,
   getUploadedManifestHashes,
 } from "../lib/api";
-import type { ManifestConsentState, ScannedManifest } from "../types";
+import type { ManifestConsentState, ManifestUploadResult, ScannedManifest } from "../types";
 import { t, type Locale } from "../i18n";
 
 // ── Progress type (mirrors Rust UploadProgress) ──────────────────────────────
@@ -48,6 +48,7 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
   const [syncing, setSyncing] = useState(false);
   const [scannedManifests, setScannedManifests] = useState<ScannedManifest[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgressEvent | null>(null);
+  const [uploadResults, setUploadResults] = useState<ManifestUploadResult[] | null>(null);
   const consentLoaded = useRef(false);
 
   // ── Listen to progress events from Rust ────────────────────────────────
@@ -140,9 +141,26 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
       const results = await uploadManifests(filePaths);
       console.log("📊 Upload results:", results);
 
+      // Store results so the Settings tab can display per-file details
+      setUploadResults(results);
+
       const ok = results.filter((r) => r.status === "ok").length;
       const skipped = results.filter((r) => r.status === "skipped").length;
       const failed = results.filter((r) => r.status === "error").length;
+
+      // Show per-file error toasts (max 3 to avoid toast spam)
+      const errorResults = results.filter((r) => r.status === "error");
+      const toastsToShow = errorResults.slice(0, 3);
+      for (const err of toastsToShow) {
+        const detail = err.detail ?? "Unknown error";
+        showToast(`❌ ${err.fileName}`, detail);
+      }
+      if (errorResults.length > 3) {
+        showToast(
+          `⚠️ +${errorResults.length - 3} more`,
+          "Check Settings tab for full list"
+        );
+      }
 
       if (ok > 0 && failed === 0) {
         showToast(
@@ -170,6 +188,12 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
       setSyncing(false);
     }
   }, [locale, showToast, syncing]);
+
+  // Clear upload results when starting a new sync
+  const syncManifestsWithReset = useCallback(async () => {
+    setUploadResults(null);
+    await syncManifests();
+  }, [syncManifests]);
 
   const acceptConsent = useCallback(async () => {
     await setManifestConsent(true, true);
@@ -203,7 +227,8 @@ export function useManifestSync({ locale = "en", showToast }: ManifestSyncOption
     syncing,
     scannedManifests,
     uploadProgress,
-    syncManifests,
+    uploadResults,
+    syncManifests: syncManifestsWithReset,
     acceptConsent,
     declineConsent,
     toggleConsent,
