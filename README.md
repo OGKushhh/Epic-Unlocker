@@ -86,7 +86,7 @@ You have two options:
 2. Copy `EOSSDK-Win64-Shipping.dll` into the same folder.
 3. Launch the game – Epic Unlocker will forward most calls to the original DLL.
 
-#### B) Hook Mode (using Koaloader)
+#### B) Hook Mode (using Koaloader -- Recommended)
 1. Download [Koaloader](https://github.com/acidicoala/Koaloader/releases).
 2. Rename our DLL to `ScreamAPI64.dll` (or 32) and place it (with the INI) in your game directory.
 3. Configure `Koaloader.json` to inject `ScreamAPI64.dll` into the game process.
