@@ -3,6 +3,7 @@
 #include "ScreamAPI.h"
 #include "eos_intercept.h"
 #include "achievement_manager.h"
+#include "util.h"
 
 
 EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetPlayerAchievementCount(EOS_HAchievements Handle, const EOS_Achievements_GetPlayerAchievementCountOptions* Options){
@@ -12,6 +13,11 @@ EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetPlayerAchievementCount(EOS_HAchie
 
 // This is where the achievement magic happens ;)
 EOS_DECLARE_FUNC(void) EOS_Achievements_UnlockAchievements(EOS_HAchievements Handle, const EOS_Achievements_UnlockAchievementsOptions* Options, void* ClientData, const EOS_Achievements_OnUnlockAchievementsCompleteCallback CompletionDelegate){
+    // UE5.4+ OSSv2: capture handle if not yet captured (no userId available here)
+    if (Handle) {
+        Util::TryCaptureFallbackHandles(Handle, nullptr);
+        AchievementManager::TryInitFromFallback(ScreamAPI::thisDLL);
+    }
     static auto original = ScreamAPI::proxyFunction(&EOS_Achievements_UnlockAchievements, "EOS_Achievements_UnlockAchievements");
     return Intercept::Achievements_UnlockAchievements(original, Handle, Options, ClientData, CompletionDelegate);
 }
@@ -26,6 +32,10 @@ EOS_DECLARE_FUNC(uint32_t) EOS_Achievements_GetAchievementDefinitionCount(EOS_HA
 // Achievement Definitions
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_QueryDefinitions(EOS_HAchievements Handle, const EOS_Achievements_QueryDefinitionsOptions* Options, void* ClientData, const EOS_Achievements_OnQueryDefinitionsCompleteCallback CompletionDelegate){
+    // UE5.4+ OSSv2: capture handle + userId from game's call parameters
+    Util::TryCaptureFallbackHandles(Handle, Options ? Options->LocalUserId : nullptr);
+    // If the polling thread timed out, trigger achievement manager init now
+    AchievementManager::TryInitFromFallback(ScreamAPI::thisDLL);
     static auto original = ScreamAPI::proxyFunction(&EOS_Achievements_QueryDefinitions, "EOS_Achievements_QueryDefinitions");
     Intercept::Achievements_QueryDefinitions(original, Handle, Options, ClientData, CompletionDelegate);
 }
@@ -41,6 +51,10 @@ EOS_DECLARE_FUNC(void) EOS_Achievements_DefinitionV2_Release(EOS_Achievements_De
 // Player Achievements
 
 EOS_DECLARE_FUNC(void) EOS_Achievements_QueryPlayerAchievements(EOS_HAchievements Handle, const EOS_Achievements_QueryPlayerAchievementsOptions* Options, void* ClientData, const EOS_Achievements_OnQueryPlayerAchievementsCompleteCallback CompletionDelegate){
+    // UE5.4+ OSSv2: capture handle + userId from game's call parameters
+    Util::TryCaptureFallbackHandles(Handle, Options ? Options->LocalUserId : nullptr);
+    // If the polling thread timed out, trigger achievement manager init now
+    AchievementManager::TryInitFromFallback(ScreamAPI::thisDLL);
     static auto original = ScreamAPI::proxyFunction(&EOS_Achievements_QueryPlayerAchievements, "EOS_Achievements_QueryPlayerAchievements");
     Intercept::Achievements_QueryPlayerAchievements(original, Handle, Options, ClientData, CompletionDelegate);
 }

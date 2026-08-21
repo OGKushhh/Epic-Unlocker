@@ -137,10 +137,11 @@ Game calls LoadLibrary("EOSSDK-Win64-Shipping.dll")
 
 ## Test Results After Fix
 
-| Game | Achievements | DLC Spoof | Platform_Create Called |
-|---|---|---|---|
-| Mojave (UE 5.4, proxy) | ✅ Working | ❌ Not tested | No (UE5.4+ behavior) |
-| Oddsparks (UE 5.5, proxy) | ✅ Working | ❌ Broken (all "Not Owned") | No (UE5.4+ behavior) |
+| Game | Achievements | DLC Spoof | Platform_Create Called | Classification |
+|---|---|---|---|---|
+| Oddsparks (UE 5.5, proxy) | ✅ Working | ✅ Intercept fires (ownership spoof active) | No (UE5.4+ behavior) | Tier 2 — `EOS_Achievements_*` + `EOS_Ecom_*` calls go through DLL |
+| Mojave (UE 5.4, proxy) | ❌ Nothing fires | ❌ Nothing fires | No (UE5.4+ behavior) | Tier 3 — statically linked EOS after `EOS_Initialize` |
+| Tannenberg (proxy) | ⚠️ Local only (overlay) | — | Yes | Pre-UE5.4 — normal path works, separate server-side reporting issue |
 
 ---
 
@@ -156,12 +157,85 @@ python master_generator.py <path_to_game_DLL>
 4. Generates `ScreamAPI.def` — native exports ONLY for the 52 intercepted functions
 5. Prints copy instructions (does NOT copy automatically)
 
+## Fallback Handle Capture System (Tier 2 Fix)
+
+UE5.4+ OSSv2 creates the EOS platform internally without calling `EOS_Platform_Create` through the public API. For Tier 2 games (e.g., Oddsparks), the engine still calls `EOS_Achievements_QueryDefinitions`, `EOS_Achievements_QueryPlayerAchievements`, and `EOS_Achievements_UnlockAchievements` through the DLL export table — it just obtains the handles through an internal path.
+
+The fallback capture system works by extracting the needed handles from the function call parameters themselves:
+
+```
+Game calls EOS_Achievements_QueryDefinitions(HAch, Options->LocalUserId, ...)
+  → ScreamAPI intercepts (C++ wrapper via .def)
+  → TryCaptureFallbackHandles(HAch, LocalUserId) captures handles atomically
+  → AchievementManager::TryInitFromFallback() lazy-inits if polling timed out
+  → Forwards to original _o.dll
+```
+
+**Key design:** `std::atomic<bool>` with `exchange(true)` ensures single capture with zero mutex overhead on the hot path. The 60-second polling loop checks `HasFallbackHandles()` at timeout before giving up.
+
+### UE5.4+ Game Classification
+
+| Tier | `Platform_Create` via DLL? | Achievement calls via DLL? | Fallback helps? | Example |
+|---|---|---|---|---|
+| Pre-UE5.4 | ✅ Yes | ✅ Yes | Not needed (normal path) | Most older titles |
+| Tier 2 | ❌ No | ✅ Yes | ✅ Yes | Oddsparks (UE 5.5) |
+| Tier 3 | ❌ No | ❌ No | ❌ No | Mojave (UE 5.4) |
+
+### Files Modified for Fallback
+
+| File | Change |
+|---|---|
+| `src/util.h` | Added `g_fallback_hAchievements`, `g_fallback_productUserId` atomics, `TryCaptureFallbackHandles()`, `HasFallbackHandles()` |
+| `src/util.cpp` | Atomic fallback storage, `TryCaptureFallbackHandles()` impl, patched `getHAchievements()`/`getProductUserId()` with OSSv2 fallback return |
+| `src/eos-impl/eos_achievements.cpp` | Added `TryCaptureFallbackHandles` + `TryInitFromFallback` to `QueryDefinitions`, `QueryPlayerAchievements`, `UnlockAchievements` |
+| `src/achievement_manager.h/cpp` | Added `TryInitFromFallback()` for lazy initialization after polling timeout |
+| `src/ScreamAPI.cpp` | Timeout path now checks `HasFallbackHandles()` before giving up |
+
+## Tier 3 — Statically Linked EOS (Open Investigation)
+
+### Observed Behavior
+
+Mojave (UE 5.4) and Tannenberg exhibit a pattern where `EOS_Initialize` is the **only** EOS function called through the DLL export table. Zero calls to `EOS_Platform_Create`, `EOS_Platform_Tick`, `EOS_Auth_Login`, `EOS_Connect_Login`, `EOS_Achievements_*`, or `EOS_UI_*` in 60+ seconds of actual gameplay. No Epic overlay either.
+
+Process Explorer confirmed: only **one** `EOSSDK-Win64-Shipping.dll` loaded — the ScreamAPI proxy. The original `_o.dll` is loaded by the proxy internally. No duplicate DLLs.
+
+Mojave has real achievement unlock rates on the Epic Store, so achievements DO work for legitimate players. The game IS using EOS — just not through the DLL's export table after `EOS_Initialize`.
+
+### What's Happening
+
+UE5.4+ appears to use the EOS SDK DLL as a **bootstrap only** — `EOS_Initialize` sets up global EOS state, then the engine's `OnlineSubsystemEOS` module does everything else through **statically linked EOS code inside the UE binary itself**. Platform creation, tick loop, authentication, achievements, UI — all run through internal code paths that never touch the DLL's export table.
+
+This means DLL proxying (and MinHook detouring of DLL exports) fundamentally cannot intercept these games. The DLL is a shell; the real work happens inside the engine.
+
+### Why This Is Hard
+
+- **DLL proxying** only sees calls that go through the DLL's export table → nothing after `EOS_Initialize`
+- **MinHook** detours DLL exports → same blind spot
+- **Memory pattern scanning** could find statically linked EOS functions inside UE modules, but requires per-game signatures and breaks on every engine update
+- **Network interception** (hooking WinHTTP/WinINet HTTPS calls to Epic's backend) is DLL-agnostic but extremely complex and fragile
+
+### Possible Avenues (Unexplored)
+
+1. **`EOS_Initialize` deep hook** — the one call we DO see might return or set up internal state that the engine caches. Tampering with what happens inside `EOS_Initialize` (in the original DLL) could inject hooks into the internal EOS state before the engine takes over. Worth investigating what `EOS_Initialize` actually sets up internally.
+
+2. **VTable or function table returned by EOS** — if `EOS_Initialize` or any early call returns function pointers that the engine later uses, intercepting those tables could provide a hook point. The EOS SDK is a C API, but the engine might wrap it in function tables internally.
+
+3. **Static binary patching of the UE module** — identify which `.exe` or UE engine `.dll` contains the statically linked EOS code (likely `OnlineSubsystemEOS*.dll` or the main game executable), then patch it directly. Tools like Ghidra/IDA could reveal the internal EOS call sites.
+
+4. **Hook the original DLL's internal functions** — the `_o.dll` is loaded in-memory. If the engine obtains function pointers from it via `GetProcAddress` and caches them, those pointers DO point to the original DLL's code. MinHook could potentially detour functions in the original DLL *before* the engine caches the pointers — but this would need to happen before or during `EOS_Initialize`.
+
+5. **Epic Online Services plugin architecture** — UE5.4+ might load EOS through a plugin system that we haven't identified. There could be additional modules or config files that control how EOS is loaded that we haven't examined.
+
+### Status
+
+**Open.** Tier 3 is not a ScreamAPI bug — it's a fundamental limitation of the DLL proxy approach for games that statically link EOS. A solution exists in theory but requires research into UE5.4+'s internal EOS integration that goes beyond what DLL proxying can offer. If any of the above avenues yield results, the fix would likely be a new ScreamAPI mode (not proxy, not hook — something new).
+
 ---
 
 ## Remaining Unsolved Issues
 
-1. **How does UE5.4+ create the EOS platform without `EOS_Platform_Create`?** Likely OSSv2/EOSGS internal path. Diagnostic logs added to all 6 `EOS_Platform_Get*Interface` functions but not yet tested.
+1. **How does UE5.4+ create the EOS platform without `EOS_Platform_Create`?** → Partially answered: it's statically linked. See Tier 3 section above.
 
-2. **Why doesn't DLC ownership spoofing work in Oddsparks?** Achievements work, confirming the interception mechanism is correct. The ecom ownership code path (`eos_ecom_ownership.cpp`) needs investigation — possibly UE5.4+ uses a different ecom query flow.
+2. **Why doesn't DLC ownership spoofing work in Oddsparks?** → RESOLVED: It does work. The intercept fires, catalog is fetched (9 items), and `EOS_Ecom_QueryOwnership` callback spoofs ownership. The earlier "all Not Owned" observation was likely taken before the .def fix was applied or before DLC logging was enabled.
 
-3. **Hook mode still fails on UE5.4+.** Not investigated. May share the same root cause (platform created through internal path that bypasses hooks).
+3. **Hook mode still fails on UE5.4+.** Tier 3 games won't be helped by hook mode either — same root cause (statically linked EOS after init). Tier 2 games may benefit from hook mode as an alternative to proxy mode.

@@ -81,7 +81,7 @@ namespace ScreamAPI
 
         Logger::info("Epic Unlocker v" SCREAM_API_VERSION);
 
-        // ── Static SDK capability check (runs once at DLL load) ───────
+        // -- Static SDK capability check (runs once at DLL load) -----
         Logger::info("EOS SDK (headers): v%d.%d.%d.%d",
                      EOS_MAJOR_VERSION, EOS_MINOR_VERSION,
                      EOS_PATCH_VERSION, EOS_HOTFIX_VERSION);
@@ -164,7 +164,7 @@ namespace ScreamAPI
             }
 
         } else {
-            // ── Hook mode ──────────────────────────────────────────────
+            // -- Hook mode -----------------------------------------------
             // Not-Proxy mode: use MinHook to intercept EOS SDK calls.
 
             // -----------------------------------------------------------------
@@ -298,9 +298,28 @@ namespace ScreamAPI
                 }
             }
 
-            Logger::error("Timed out waiting for EOS platform after %d seconds", MAX_WAIT_SECONDS);
-            Logger::error("Achievements will not be available");
-            Logger::warn("The game may not use EOS Achievements or requires manual initialization");
+            // -- 60-second timeout reached ---------------------------------
+            // For pre-UE5.4 games: EOS_Platform_Create was never called, game
+            // probably doesn't use achievements. Give up.
+            //
+            // For UE5.4+ OSSv2 games: Platform was created internally by the
+            // engine. Our intercept wrappers may have captured valid handles
+            // from the game's EOS_Achievements_* calls. Check the fallback
+            // path before giving up.
+
+            if (Util::HasFallbackHandles()) {
+                Logger::info("Platform polling timed out, but UE5.4+ OSSv2 fallback handles are available");
+                Logger::info("Initializing achievement manager via fallback path");
+                if (Config::EnableOverlay()) {
+                    AchievementManager::initWithOverlay(hModule);
+                } else {
+                    AchievementManager::init();
+                }
+            } else {
+                Logger::error("Timed out waiting for EOS platform after %d seconds", MAX_WAIT_SECONDS);
+                Logger::error("Achievements will not be available");
+                Logger::warn("The game may not use EOS Achievements or requires manual initialization");
+            }
         }).detach();
     }
 

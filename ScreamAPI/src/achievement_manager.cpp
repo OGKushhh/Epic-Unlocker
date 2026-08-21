@@ -54,6 +54,10 @@ static std::atomic<bool> waitingForUser{false};
 static std::atomic<bool> definitionsQueried{false};
 static std::atomic<bool> playerAchievementsQueried{false};
 
+// UE5.4+ OSSv2: set to true when init() or TryInitFromFallback() has run,
+// preventing duplicate initialization from the other path.
+static std::atomic<bool> g_fallbackInitDone{false};
+
 // ----------------------------------------------------------------------------
 // Helper: Log achievement statistics to the log file
 // ----------------------------------------------------------------------------
@@ -788,6 +792,7 @@ void init() {
 
     if (!initialized) {
         initialized = true;
+        g_fallbackInitDone.store(true, std::memory_order_relaxed); // prevent TryInitFromFallback
         Logger::info("Achievement Manager: Initializing (overlay state irrelevant)");
         Logger::debug("[ACH] init(): Starting achievement manager initialization");
 
@@ -862,6 +867,26 @@ void initWithOverlay(void* hModule) {
     Overlay::Init((HMODULE)hModule, &achievements, unlockAchievement);
     init();
     Logger::ovrly("Achievement Manager: initWithOverlay complete");
+}
+
+// -- UE5.4+ OSSv2 Fallback Init --------------------------------------
+// Called from eos_achievements.cpp intercept wrappers when fallback handles
+// are captured. If the 60-second polling thread already timed out without
+// initializing the achievement manager, this triggers init now.
+//
+// The atomic guard ensures this only fires once, even if multiple intercept
+// wrappers call it concurrently. g_fallbackInitDone is also set by init()
+// to prevent this from firing after a successful normal-path init.
+
+void TryInitFromFallback(void* hModule) {
+    if (g_fallbackInitDone.exchange(true)) return; // already initialized
+
+    Logger::info("[ACH] TryInitFromFallback: triggering achievement manager init from intercept capture");
+    if (hModule && Config::EnableOverlay()) {
+        initWithOverlay(hModule);
+    } else {
+        init();
+    }
 }
 
 } // namespace AchievementManager

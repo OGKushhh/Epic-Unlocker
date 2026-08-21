@@ -356,7 +356,7 @@ void Platform_Release(Platform_Release_t original, EOS_HPlatform Handle) {
 }
 
 void Platform_Tick(Platform_Tick_t original, EOS_HPlatform Handle) {
-    Logger::info("[INTERCEPT] >>> EOS_Platform_Tick called (Handle=%p) <<<", Handle);
+    Logger::debug("[INTERCEPT] >>> EOS_Platform_Tick called (Handle=%p) <<<", Handle);
     // Fallback: if EOS_Platform_Create hook never fired but the game is calling
     // Tick with a valid handle, capture it so isEOSPlatformReady() returns true.
     CapturePlatformHandleFromFallback(Handle, "Platform_Tick");
