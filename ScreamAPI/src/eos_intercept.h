@@ -8,8 +8,58 @@
 #include "eos-sdk/eos_stats.h"
 #include "eos-sdk/eos_logging.h"
 #include "eos-sdk/eos_metrics.h"
+#include "eos-sdk/eos_init.h"
 #include <map>
 #include <string>
+
+namespace GameAlloc {
+    // Game's custom memory allocator, captured from EOS_InitializeOptions.
+    // nullptr means the game didn't provide one (use CRT malloc/free as fallback).
+    inline EOS_AllocateMemoryFunc  Alloc  = nullptr;
+    inline EOS_ReleaseMemoryFunc   Free   = nullptr;
+    inline EOS_ReallocateMemoryFunc Realloc = nullptr;
+
+    inline bool HasAllocator() { return Alloc != nullptr; }
+
+    // Allocate using the game's allocator (or CRT malloc as fallback).
+    // Alignment is always a power of 2 per EOS SDK contract.
+    inline void* Allocate(size_t size, size_t alignment = 1) {
+        if (Alloc) return Alloc(size, alignment);
+        // CRT fallback — _aligned_malloc for proper alignment support
+        return _aligned_malloc(size, alignment);
+    }
+
+    // Free using the game's deallocator (or CRT free as fallback).
+    inline void Release(void* ptr) {
+        if (!ptr) return;
+        if (Free) { Free(ptr); return; }
+        _aligned_free(ptr);
+    }
+
+    // Copy a std::string into a game-allocator-owned buffer.
+    // Returns nullptr on allocation failure.
+    inline char* CopyString(const std::string& s) {
+        size_t len = s.size() + 1; // include null terminator
+        char* buf = static_cast<char*>(Allocate(len, 1));
+        if (!buf) return nullptr;
+        memcpy(buf, s.c_str(), len);
+        return buf;
+    }
+
+    // Initialize from EOS_InitializeOptions. Call once during EOS_Initialize.
+    inline void CaptureFromOptions(const EOS_InitializeOptions* Options) {
+        if (!Options) return;
+        if (Options->AllocateMemoryFunction) {
+            Alloc   = Options->AllocateMemoryFunction;
+            Free    = Options->ReleaseMemoryFunction;
+            Realloc = Options->ReallocateMemoryFunction;
+        } else {
+            Alloc   = nullptr;
+            Free    = nullptr;
+            Realloc = nullptr;
+        }
+    }
+}
 
 namespace Intercept {
 

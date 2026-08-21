@@ -232,14 +232,34 @@ static void InjectExtraEntitlements() {
 }
 
 static EOS_Ecom_Entitlement* MakeEntitlement(const std::string& id, const std::string& title) {
-    auto* e = new EOS_Ecom_Entitlement{};
+    // Allocate the struct using the game's allocator (or CRT fallback).
+    // This ensures the game can safely free it via its own deallocator.
+    void* raw = GameAlloc::Allocate(sizeof(EOS_Ecom_Entitlement), alignof(EOS_Ecom_Entitlement));
+    if (!raw) {
+        Logger::error("[INTERCEPT] MakeEntitlement: failed to allocate EOS_Ecom_Entitlement (%zu bytes)",
+                      sizeof(EOS_Ecom_Entitlement));
+        return nullptr;
+    }
+    auto* e = new (raw) EOS_Ecom_Entitlement{};  // placement new — zero-init via {}
+
     e->ApiVersion      = EOS_ECOM_ENTITLEMENT_API_LATEST;
-    e->EntitlementId   = id.c_str();
-    e->CatalogItemId   = id.c_str();
-    e->EntitlementName = title.c_str();
+    e->EntitlementId   = GameAlloc::CopyString(id);
+    e->CatalogItemId   = GameAlloc::CopyString(id);
+    e->EntitlementName = GameAlloc::CopyString(title);
     e->bRedeemed       = false;
     e->EndTimestamp    = -1;
     e->ServerIndex     = -1;
+
+    // If any string copy failed, clean up and return null
+    if (!e->EntitlementId || !e->CatalogItemId || !e->EntitlementName) {
+        Logger::error("[INTERCEPT] MakeEntitlement: failed to copy strings for entitlement '%s'", id.c_str());
+        GameAlloc::Release(const_cast<char*>(e->EntitlementName));
+        GameAlloc::Release(const_cast<char*>(e->EntitlementId));
+        GameAlloc::Release(const_cast<char*>(e->CatalogItemId));
+        GameAlloc::Release(e);
+        return nullptr;
+    }
+
     return e;
 }
 
@@ -800,8 +820,16 @@ void Ecom_Entitlement_Release(Ecom_Entitlement_Release_t original, EOS_Ecom_Enti
         return;
     }
     if (Entitlement) {
-        Logger::debug("[INTERCEPT] EOS_Ecom_Entitlement_Release: %s", Entitlement->EntitlementId);
-        delete Entitlement;
+        Logger::debug("[INTERCEPT] EOS_Ecom_Entitlement_Release: %s",
+                      Entitlement->EntitlementId ? Entitlement->EntitlementId : "(null)");
+        // Free string buffers that were allocated by GameAlloc::CopyString in MakeEntitlement.
+        // These are const char* in the struct but we allocated them, so we must free them.
+        // Order doesn't matter since they're independent allocations.
+        GameAlloc::Release(const_cast<char*>(Entitlement->EntitlementName));
+        GameAlloc::Release(const_cast<char*>(Entitlement->EntitlementId));
+        GameAlloc::Release(const_cast<char*>(Entitlement->CatalogItemId));
+        // Free the struct itself (allocated via GameAlloc::Allocate in MakeEntitlement)
+        GameAlloc::Release(Entitlement);
     } else {
         Logger::warn("[INTERCEPT] EOS_Ecom_Entitlement_Release: null entitlement");
     }

@@ -8,40 +8,11 @@ A desktop GUI for **Epic Achievements Unlocker**. Replaces the old Win32/ImGui E
 |---|---|
 | Frontend | React 18 + TypeScript 5.6 |
 | Styling | Tailwind CSS 3.4 (custom dark palette ported from old EpicGUI.cpp) |
-| Build tool | Vite 5 (Tauri's default) |
+| Build tool | Vite 6.4.3 (Tauri's default) |
 | Backend | Rust (stable) + Tauri 2.1 |
 | IPC to ScreamAPI | Named pipe `\\.\pipe\EpicGUI` (binary protocol — see `src-tauri/src/pipe_protocol.rs`) |
 | Output | Single `EpicGUI.exe` (~10–15 MB portable, no DLLs needed on Win10/11) |
 
-## Project layout
-
-```
-EpicGUI/
-├── src/                        # React frontend
-│   ├── App.tsx                 # Root component (placeholder until mockup)
-│   ├── main.tsx                # React entry
-│   ├── lib/api.ts              # Typed wrappers around `invoke()`
-│   ├── types/index.ts          # Shared TS types (mirror Rust structs)
-│   └── styles/globals.css      # Tailwind + custom scrollbar/btn classes
-├── src-tauri/                  # Rust + Tauri backend
-│   ├── Cargo.toml
-│   ├── tauri.conf.json         # Window config (frameless, 1100x720)
-│   ├── capabilities/default.json
-│   └── src/
-│       ├── main.rs             # Binary entry
-│       ├── lib.rs              # Tauri builder + plugin registration
-│       ├── commands.rs         # #[tauri::command] handlers (frontend API)
-│       ├── pipe_protocol.rs    # Wire format ported from pipe_protocol.h
-│       ├── pipe_client.rs      # Connection loop + packet dispatcher
-│       ├── state.rs            # Shared AppState (Arc<RwLock<...>>)
-│       ├── windows_impl.rs     # Win32 named-pipe client (CreateFileW)
-│       └── stub_impl.rs        # Non-Windows stub (for dev on Linux/macOS)
-├── package.json
-├── vite.config.ts
-├── tailwind.config.js
-├── tsconfig.json
-└── index.html
-```
 
 ## Build instructions
 
@@ -52,7 +23,7 @@ EpicGUI/
    ```powershell
    rustup default stable-x86_64-pc-windows-msvc
    ```
-3. **Node.js 18+** (LTS recommended) — <https://nodejs.org>
+3. **Node.js 22+** (LTS recommended) — <https://nodejs.org>
 4. **WebView2** — preinstalled on Windows 10/11. If missing, grab the Evergreen Bootstrapper from Microsoft.
 
 ### Build steps (on Windows)
@@ -125,13 +96,4 @@ Available events: `connection-changed`, `achievements-list`, `achievement-update
 | `DlcCatalogHeader` | 8 | ✓ |
 | `DlcCatalogEntry` | 8 | ✓ |
 
-The existing ScreamAPI DLL does not need any changes — it'll keep serving the same pipe protocol; the new Rust client just connects and parses.
-
-## Status
-
-- ✅ Tauri + React + TS + Tailwind scaffolding
-- ✅ Rust backend (pipe protocol, command handlers, frameless window)
-- ✅ Frontend shell with Tauri API hooks
-- ✅ TypeScript compiles, Vite builds clean
-- ✅ Rust pipe_protocol + state modules compile and pass size/runtime checks
-- ⏳ **Waiting for UI mockup** — `src/App.tsx` is a placeholder
+The existing Epic Unlocker DLL does not need any changes — it'll keep serving the same pipe protocol; the new Rust client just connects and parses.
