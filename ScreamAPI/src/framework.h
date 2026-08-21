@@ -37,6 +37,11 @@
 #define SCREAMAPI_MIN_SDK_VERSION 0  // Default: assume modern SDK, include all exports
 #endif
 
+// Include the linker exports based on the target architecture (32 vs 64)
+// These #pragma comment(linker) directives forward all non-intercepted functions
+// to the _o.dll. Intercepted functions are commented out in the header and
+// instead exported natively via ScreamAPI.def (which takes precedence over pragmas).
+
 #ifdef _WIN64
     #if SCREAMAPI_MIN_SDK_VERSION > 0 && SCREAMAPI_MIN_SDK_VERSION < 11400
         #include "LinkerExports/LegacyExports64.h"

@@ -356,6 +356,7 @@ void Platform_Release(Platform_Release_t original, EOS_HPlatform Handle) {
 }
 
 void Platform_Tick(Platform_Tick_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_Tick called (Handle=%p) <<<", Handle);
     // Fallback: if EOS_Platform_Create hook never fired but the game is calling
     // Tick with a valid handle, capture it so isEOSPlatformReady() returns true.
     CapturePlatformHandleFromFallback(Handle, "Platform_Tick");
@@ -377,34 +378,39 @@ void Platform_Tick(Platform_Tick_t original, EOS_HPlatform Handle) {
 }
 
 EOS_HConnect Platform_GetConnectInterface(Platform_GetConnectInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetConnectInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetConnectInterface");
     auto result = original(Handle);
-    if (result) Logger::debug("[INTERCEPT] EOS_Platform_GetConnectInterface -> %p", result);
+    Logger::info("[INTERCEPT] EOS_Platform_GetConnectInterface -> %p", result);
     return result;
 }
 
 EOS_HAuth Platform_GetAuthInterface(Platform_GetAuthInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetAuthInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetAuthInterface");
     auto result = original(Handle);
-    if (result) Logger::debug("[INTERCEPT] EOS_Platform_GetAuthInterface -> %p", result);
+    Logger::info("[INTERCEPT] EOS_Platform_GetAuthInterface -> %p", result);
     return result;
 }
 
 EOS_HAchievements Platform_GetAchievementsInterface(Platform_GetAchievementsInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetAchievementsInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetAchievementsInterface");
     auto result = original(Handle);
-    if (result) Logger::debug("[INTERCEPT] EOS_Platform_GetAchievementsInterface -> %p", result);
+    Logger::info("[INTERCEPT] EOS_Platform_GetAchievementsInterface -> %p", result);
     return result;
 }
 
 EOS_HEcom Platform_GetEcomInterface(Platform_GetEcomInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetEcomInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetEcomInterface");
     auto result = original(Handle);
-    if (result) Logger::debug("[INTERCEPT] EOS_Platform_GetEcomInterface -> %p", result);
+    Logger::info("[INTERCEPT] EOS_Platform_GetEcomInterface -> %p", result);
     return result;
 }
 
 EOS_HStats Platform_GetStatsInterface(Platform_GetStatsInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetStatsInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetStatsInterface");
     auto result = original(Handle);
     if (result) {
@@ -416,9 +422,10 @@ EOS_HStats Platform_GetStatsInterface(Platform_GetStatsInterface_t original, EOS
 }
 
 EOS_HUI Platform_GetUIInterface(Platform_GetUIInterface_t original, EOS_HPlatform Handle) {
+    Logger::info("[INTERCEPT] >>> EOS_Platform_GetUIInterface called (Handle=%p) <<<", Handle);
     CapturePlatformHandleFromFallback(Handle, "GetUIInterface");
     auto result = original(Handle);
-    if (result) Logger::debug("[INTERCEPT] EOS_Platform_GetUIInterface -> %p", result);
+    Logger::info("[INTERCEPT] EOS_Platform_GetUIInterface -> %p", result);
     return result;
 }
 

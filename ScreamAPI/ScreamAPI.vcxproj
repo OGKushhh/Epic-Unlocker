@@ -96,6 +96,7 @@
     <ClCompile Include="src\eos-impl\eos_ecom_entitlements.cpp" />
     <ClCompile Include="src\eos-impl\eos_ecom_items.cpp" />
     <ClCompile Include="src\eos-impl\eos_init.cpp" />
+    <ClCompile Include="src\eos-impl\eos_initialize.cpp" />
     <ClCompile Include="src\dlc_catalog.cpp" />
     <ClCompile Include="src\eos-impl\eos_ecom_ownership.cpp" />
     <ClCompile Include="src\eos-impl\eos_ecom_transactions.cpp" />
@@ -114,6 +115,7 @@
     <ClCompile Include="src\util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="src\ScreamAPI.def" />
     <None Include="resources\ScreamAPI.props" />
     <None Include="src\eos-sdk\eos_achievements_types_deprecated.inl" />
     <None Include="src\eos-sdk\eos_leaderboards_types_deprecated.inl" />
@@ -330,6 +332,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>src\ScreamAPI.def</ModuleDefinitionFile>
     </Link>
     <PostBuildEvent>
       <Command>

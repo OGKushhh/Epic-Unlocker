@@ -1,0 +1,61 @@
+; ScreamAPI.def — Native exports only (intercepted by eos-impl/ code)
+; Forwarded exports are handled by #pragma comment(linker) in LinkerExports64.h
+;
+; This file exists to fix the linker shadowing bug: #pragma comment directives
+; were overriding __declspec(dllexport) on eos-impl/ wrapper functions.
+; The .def file takes precedence over pragmas, forcing these symbols to
+; resolve to the C++ implementations in eos-impl/ instead of being forwarded.
+;
+EXPORTS
+    EOS_Achievements_AddNotifyAchievementsUnlocked
+    EOS_Achievements_AddNotifyAchievementsUnlockedV2
+    EOS_Achievements_CopyAchievementDefinitionByIndex
+    EOS_Achievements_CopyAchievementDefinitionV2ByIndex
+    EOS_Achievements_DefinitionV2_Release
+    EOS_Achievements_Definition_Release
+    EOS_Achievements_GetAchievementDefinitionCount
+    EOS_Achievements_GetPlayerAchievementCount
+    EOS_Achievements_PlayerAchievement_Release
+    EOS_Achievements_QueryDefinitions
+    EOS_Achievements_QueryPlayerAchievements
+    EOS_Achievements_UnlockAchievements
+    EOS_Auth_AddNotifyLoginStatusChanged
+    EOS_Auth_GetLoggedInAccountByIndex
+    EOS_Auth_Login
+    EOS_Connect_AddNotifyLoginStatusChanged
+    EOS_Connect_GetLoggedInUserByIndex
+    EOS_Connect_Login
+    EOS_EResult_ToString
+    EOS_Ecom_Checkout
+    EOS_Ecom_CopyEntitlementById
+    EOS_Ecom_CopyEntitlementByIndex
+    EOS_Ecom_CopyEntitlementByNameAndIndex
+    EOS_Ecom_Entitlement_Release
+    EOS_Ecom_GetEntitlementsByNameCount
+    EOS_Ecom_GetEntitlementsCount
+    EOS_Ecom_GetItemReleaseCount
+    EOS_Ecom_QueryEntitlements
+    EOS_Ecom_QueryEntitlementToken
+    EOS_Ecom_QueryOwnership
+    EOS_Ecom_QueryOwnershipBySandboxIds
+    EOS_Ecom_QueryOwnershipToken
+    EOS_Ecom_RedeemEntitlements
+    EOS_EpicAccountId_IsValid
+    EOS_Initialize
+    EOS_Metrics_BeginPlayerSession
+    EOS_Metrics_EndPlayerSession
+    EOS_Platform_Create
+    EOS_Platform_GetAchievementsInterface
+    EOS_Platform_GetAuthInterface
+    EOS_Platform_GetConnectInterface
+    EOS_Platform_GetEcomInterface
+    EOS_Platform_GetStatsInterface
+    EOS_Platform_GetUIInterface
+    EOS_Platform_Release
+    EOS_Platform_Tick
+    EOS_Stats_CopyStatByIndex
+    EOS_Stats_CopyStatByName
+    EOS_Stats_GetStatsCount
+    EOS_Stats_IngestStat
+    EOS_Stats_QueryStats
+    EOS_Stats_Stat_Release

@@ -5,6 +5,12 @@
 #include "eos_intercept.h"
 
 EOS_DECLARE_FUNC(EOS_HPlatform) EOS_Platform_Create(const EOS_Platform_Options* Options){
+    Logger::info("[INTERCEPT] >>> EOS_Platform_Create CALLED! <<<");
+    if (Options) {
+        Logger::info("[INTERCEPT]   ProductId=%s, SandboxId=%s",
+            Options->ProductId ? Options->ProductId : "NULL",
+            Options->SandboxId ? Options->SandboxId : "NULL");
+    }
     static auto original = ScreamAPI::proxyFunction(&EOS_Platform_Create, "EOS_Platform_Create");
     // Store originals for ForceAchievementsConfiguration
     static bool originalsStored = false;
