@@ -5,8 +5,10 @@
  *   - Search input (filters by title/desc, case-insensitive)
  *   - 4 filter pills: All / Locked / Unlocked / Hidden
  *   - Sort dropdown: Alphabetical / Rarity / Progress / XP
- *   - Scrollable list of 52px rows
- *   - Each row: emoji icon + title + desc + progress bar + badges + Unlock btn
+ *   - Scrollable list of 85px rows (25% bigger than the original 68px)
+ *   - 52px icons (30% bigger) with optional cached image fetch
+ *   - Auto-fetch cached icons from PC on first mount (no manual click needed)
+ *   - Click on achievement icon → opens a full-screen lightbox with zoom & pan
  *   - Row hover -> achievement tooltip (title + desc) ONLY when description is truncated/overflowed
  *   - Stat-gated badge hover -> explanation tooltip (how stat-gated works + 5-30s wait)
  *   - G4: Rarity badge (Bronze/Silver/Gold/Platinum) + unlock timestamp
@@ -14,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { fetchAchievementIcons } from "../../lib/api";
 import type { Achievement, RarityTier } from "../../data/mockupData";
 import { t, type Locale } from "../../i18n";
 
@@ -119,6 +122,187 @@ function sortAchievements(list: Achievement[], mode: SortMode): Achievement[] {
   return sorted;
 }
 
+// ============================================================================
+// Lightbox — full-screen modal viewer for achievement icons.
+//
+// Behaviour:
+//   - Click on an achievement icon → opens the lightbox with that image.
+//   - Mouse wheel zooms in/out (1x – 8x).
+//   - When zoomed above 1x, click-and-drag pans the image around.
+//   - Click on the dark backdrop (outside the image) closes the lightbox.
+//   - Pressing Escape closes the lightbox.
+//   - Smooth fade-in / fade-out transitions on open / close.
+// ============================================================================
+interface LightboxState {
+  src: string;
+  alt: string;
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
+interface AchievementLightboxProps {
+  state: LightboxState | null;
+  onClose: () => void;
+}
+
+function AchievementLightbox({ state, onClose }: AchievementLightboxProps) {
+  // `visible` flips to true on the frame after mount, which drives the
+  // opacity transition (CSS class `visible`). On close, we flip it back to
+  // false and unmount the inner content after the transition completes.
+  const [visible, setVisible] = useState(false);
+  // `internalState` mirrors `state` but persists during the fade-out window so
+  // the image stays rendered while the overlay is fading out (otherwise the
+  // user sees a black flash before the modal disappears).
+  const [internalState, setInternalState] = useState<LightboxState | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const fadeOutTimer = useRef<number | null>(null);
+
+  // ── Mount/unmount with fade-in/out ───────────────────────────────────────
+  useEffect(() => {
+    if (state) {
+      // Cancel any pending fade-out (user opened another icon mid-close)
+      if (fadeOutTimer.current) {
+        window.clearTimeout(fadeOutTimer.current);
+        fadeOutTimer.current = null;
+      }
+      setInternalState(state);
+      // Trigger fade-in on the next animation frame so the browser paints
+      // opacity:0 first, then transitions to opacity:1.
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    if (internalState) {
+      // Fade out, then unmount after the transition completes
+      setVisible(false);
+      fadeOutTimer.current = window.setTimeout(() => {
+        setInternalState(null);
+        fadeOutTimer.current = null;
+      }, 200);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  // Cleanup any pending fade-out timer on unmount
+  useEffect(() => {
+    return () => {
+      if (fadeOutTimer.current) window.clearTimeout(fadeOutTimer.current);
+    };
+  }, []);
+
+  // ── Escape key + mouse-wheel zoom ────────────────────────────────────────
+  useEffect(() => {
+    if (!internalState) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    const onWheel = (e: WheelEvent) => {
+      // Always preventDefault on wheel inside the lightbox so the page behind
+      // doesn't scroll. We use { passive: false } to allow this.
+      e.preventDefault();
+      setInternalState((s) => {
+        if (!s) return s;
+        // deltaY < 0 = wheel up = zoom in; deltaY > 0 = wheel down = zoom out
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newZoom = Math.max(1, Math.min(8, s.zoom * factor));
+        // Reset pan when zooming back to 1x
+        if (newZoom === 1) return { ...s, zoom: 1, panX: 0, panY: 0 };
+        return { ...s, zoom: newZoom };
+      });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("wheel", onWheel);
+    };
+  }, [internalState, onClose]);
+
+  // ── Drag-to-pan (document-level so we catch mouseup even outside image) ──
+  const isZoomed = internalState != null && internalState.zoom > 1;
+  useEffect(() => {
+    if (!isZoomed) {
+      dragRef.current = null;
+      return;
+    }
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      setInternalState((s) => {
+        if (!s) return s;
+        return { ...s, panX: dragRef.current!.origX + dx, panY: dragRef.current!.origY + dy };
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [isZoomed]);
+
+  if (!internalState) return null;
+
+  const onImageMouseDown = (e: React.MouseEvent) => {
+    if (internalState.zoom <= 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: internalState.panX,
+      origY: internalState.panY,
+    };
+  };
+
+  const onOverlayMouseDown = (e: React.MouseEvent) => {
+    // Close when the user mousedowns on the dark backdrop itself.
+    // Clicking the image is intercepted by stopPropagation above so it never
+    // reaches here.
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const isDragging = dragRef.current != null;
+  return (
+    <div
+      className={`ach-lightbox-overlay ${visible ? "visible" : ""}`}
+      onMouseDown={onOverlayMouseDown}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Achievement icon preview"
+    >
+      <img
+        src={internalState.src}
+        alt={internalState.alt}
+        className="ach-lightbox-img"
+        style={{
+          transform: `translate(${internalState.panX}px, ${internalState.panY}px) scale(${internalState.zoom})`,
+          cursor: isZoomed ? (isDragging ? "grabbing" : "grab") : "default",
+        }}
+        onMouseDown={onImageMouseDown}
+        draggable={false}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div className="ach-lightbox-hint">
+        Scroll to zoom · {Math.round(internalState.zoom * 100)}% · ESC to close
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AchievementsTab — toolbar + scrollable list of achievement rows.
+// ============================================================================
+
 interface AchievementsTabProps {
   active: boolean;
   achievements: Achievement[];
@@ -150,6 +334,17 @@ export default function AchievementsTab({
   const [sortOpen, setSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
+  // Auto-fetched icon paths keyed by achievement id. Used as a fallback when
+  // `ach.iconPath` isn't already populated (i.e. the user hasn't clicked
+  // "Fetch Icons" yet). Once we attempt a fetch, `autoFetchAttempted` flips
+  // to true so we never retry in the same session.
+  const [autoPaths, setAutoPaths] = useState<Record<string, string>>({});
+  const autoFetchAttempted = useRef(false);
+
+  // Lightbox state — null when closed. Held at the tab level (not the row
+  // level) so only one lightbox can be open at a time across all rows.
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
+
   // Close sort dropdown on outside click or Esc
   useEffect(() => {
     if (!sortOpen) return;
@@ -169,6 +364,47 @@ export default function AchievementsTab({
       document.removeEventListener("keydown", handler);
     };
   }, [sortOpen]);
+
+  // ── Auto-fetch cached icons ──────────────────────────────────────────────
+  // When the achievements list arrives and none of them have an `iconPath`
+  // yet (i.e. the user hasn't manually clicked "Fetch Icons"), automatically
+  // try to load them from the ScreamAPI overlay / EpicGUI icon cache.
+  //
+  // `fetchAchievementIcons()` is idempotent on the Rust side: it skips any
+  // achievement whose icon is already cached locally, so the first call is
+  // mostly a no-op if the cache exists, and a download burst if it doesn't.
+  useEffect(() => {
+    if (!IS_TAURI) return;
+    if (autoFetchAttempted.current) return;
+    if (achievements.length === 0) return;
+    // If any achievement already has iconPath set (user clicked Fetch Icons
+    // before this effect ran, or the parent persisted them), respect that
+    // and don't auto-fetch.
+    if (achievements.some((a) => a.iconPath)) {
+      autoFetchAttempted.current = true;
+      return;
+    }
+    autoFetchAttempted.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await fetchAchievementIcons();
+        if (cancelled) return;
+        const paths: Record<string, string> = {};
+        for (const r of results) {
+          if (r.path) paths[r.id] = r.path;
+        }
+        if (Object.keys(paths).length > 0) {
+          setAutoPaths(paths);
+        }
+      } catch (e) {
+        console.warn("[AchievementsTab] Auto-fetch icons failed:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [achievements]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -318,23 +554,35 @@ export default function AchievementsTab({
         )}
 
         {!loading &&
-          filtered.map((ach) => (
-            <AchievementRow
-              key={ach.id}
-              ach={ach}
-              emoji={emojis[achievements.findIndex(a => a.id === ach.id) % emojis.length] || "🏅"}
-              locale={locale}
-              iconSrc={
-                ach.iconPath && IS_TAURI
-                  ? convertFileSrc(ach.iconPath)
-                  : null
-              }
-              onHover={onHoverRow}
-              onHoverStatGated={onHoverStatGated}
-              onUnlock={onUnlockRow}
-            />
-          ))}
+          filtered.map((ach) => {
+            // Prefer the explicit iconPath (set by "Fetch Icons") and fall
+            // back to the auto-fetched path from the cache.
+            const iconPath = ach.iconPath || autoPaths[ach.id];
+            const iconSrc = iconPath && IS_TAURI ? convertFileSrc(iconPath) : null;
+            return (
+              <AchievementRow
+                key={ach.id}
+                ach={ach}
+                emoji={emojis[achievements.findIndex(a => a.id === ach.id) % emojis.length] || "🏅"}
+                locale={locale}
+                iconSrc={iconSrc}
+                onHover={onHoverRow}
+                onHoverStatGated={onHoverStatGated}
+                onUnlock={onUnlockRow}
+                onIconClick={(src, alt) =>
+                  setLightbox({ src, alt, zoom: 1, panX: 0, panY: 0 })
+                }
+              />
+            );
+          })}
       </div>
+
+      {/* Lightbox modal — single instance at the tab level so only one is
+          ever open at a time across all achievement rows. */}
+      <AchievementLightbox
+        state={lightbox}
+        onClose={() => setLightbox(null)}
+      />
     </div>
   );
 }
@@ -347,9 +595,10 @@ interface AchievementRowProps {
   onHover: (ach: Achievement | null, e?: { clientX: number; clientY: number }) => void;
   onHoverStatGated: (e: { clientX: number; clientY: number }) => void;
   onUnlock: (ach: Achievement) => void;
+  onIconClick: (src: string, alt: string) => void;
 }
 
-function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated, onUnlock }: AchievementRowProps) {
+function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated, onUnlock, onIconClick }: AchievementRowProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const [flickerKey, setFlickerKey] = useState(0);
   const descRef = useRef<HTMLDivElement>(null);
@@ -450,16 +699,25 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
           e.stopPropagation();
           if (descTruncated) onHover(null);
         }}
+        onClick={(e) => {
+          // Open the lightbox when an actual image is loaded.
+          // Emoji-only rows don't open the lightbox (no image to show).
+          if (showImg) {
+            e.stopPropagation();
+            onIconClick(iconSrc!, ach.title);
+          }
+        }}
+        style={{ cursor: showImg ? "zoom-in" : "default" }}
       >
         {showImg ? (
           <img
             src={iconSrc!}
             alt=""
-            width={32}
-            height={32}
+            width={46}
+            height={46}
             style={{
-              width: 32,
-              height: 32,
+              width: 46,
+              height: 46,
               objectFit: "contain",
               borderRadius: 4,
               imageRendering: "auto",
@@ -471,15 +729,6 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
           emoji
         )}
       </div>
-      {/* Preview popover — always in DOM; CSS uses .ach-icon:hover + .icon-preview { opacity: 1 } */}
-      {showImg && (
-      <div className="icon-preview">
-          <img
-            src={iconSrc!}
-            alt=""
-          />
-      </div>
-      )}
 
       <div className="ach-body">
         <div className="ach-title">{ach.title}</div>
@@ -512,7 +761,7 @@ function AchievementRow({ ach, emoji, iconSrc, locale, onHover, onHoverStatGated
       </div>
 
       <div className="ach-meta">
-        {!ach.unlocked && ach.progress < 1 && (
+        {!ach.unlocked && ach.statThreshold && ach.progress < 1 && (
           <>
             <div className="stat-progress">
               <div
