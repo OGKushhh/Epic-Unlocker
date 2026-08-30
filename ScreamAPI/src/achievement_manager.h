@@ -27,6 +27,7 @@ void TryInitFromFallback(void* hModule);
 
 void findAchievement(const char* achievementID, std::function<void(Overlay_Achievement&)> callback);
 void unlockAchievement(Overlay_Achievement* achievement);
+void unlockAchievementById(const char* achievementId);  // unlock by ID string (for hidden achievements not in list)
 void refresh();   // manually refresh definitions and player achievements
 std::mutex& GetAchievementsMutex();
 

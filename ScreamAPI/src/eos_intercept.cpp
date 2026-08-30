@@ -532,10 +532,6 @@ uint32_t Achievements_GetPlayerAchievementCount(Achievements_GetPlayerAchievemen
     // EAC mode we skip this entirely — the normal HPlatform-derived handle is correct.
     if (Config::EACMode() && result > 0 && !g_playerAchievementsCaptured.exchange(true)) {
         // ── Diagnostic: detect the dual-platform UserId mismatch ──────────────
-        // This is the canary that detects the dual-platform issue: if the game passes
-        // a different UserId than what ScreamAPI captured, achievement queries will
-        // fail with EOS_InvalidUser downstream. Without this check, the mismatch is
-        // invisible — you just see EOS_InvalidUser somewhere with no clue why.
         if (Options) {
             auto currentUserId = Util::getProductUserId();
             auto hAchievements = Util::getHAchievements();
@@ -571,12 +567,14 @@ uint32_t Achievements_GetPlayerAchievementCount(Achievements_GetPlayerAchievemen
                     (long long)OutAchievement->UnlockTime,
                     OutAchievement->Progress);
 
-                // Create a fallback Overlay_Achievement entry if it doesn't exist
+                // Create a fallback Overlay_Achievement entry if it doesn't exist.
+                // This catches HIDDEN achievements that QueryDefinitions excluded.
                 if (!AchievementManager::findAchievementByIdPublic(OutAchievement->AchievementId)) {
                     AchievementManager::createFallbackAchievement(
                         OutAchievement->AchievementId,
                         OutAchievement->UnlockTime != -1,
                         OutAchievement->Progress);
+                    Logger::info("[INTERCEPT]   → Created fallback entry (likely hidden achievement)");
                 }
                 EOS_Achievements_PlayerAchievement_Release(OutAchievement);
             }

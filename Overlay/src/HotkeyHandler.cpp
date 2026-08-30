@@ -40,9 +40,20 @@ static void UnlockFromFile() {
     while (std::getline(file, line)) {
         std::string id = trim(line);
         if (id.empty()) continue;
+
+        // Try to find the achievement in our list first (normal path).
+        // If not found (e.g., hidden achievements excluded from QueryDefinitions),
+        // call unlockAchievementById to send the unlock directly to the EOS SDK.
+        bool found = false;
         AchievementManager::findAchievement(id.c_str(), [&](Overlay_Achievement& ach) {
+            found = true;
             if (ach.UnlockState == UnlockState::Locked) { Overlay::unlockAchievement(&ach); n++; }
         });
+        if (!found) {
+            Logger::info("[HOTKEY] Achievement '%s' not in list - unlocking by ID directly", id.c_str());
+            AchievementManager::unlockAchievementById(id.c_str());
+            n++;
+        }
     }
     Logger::info("[HOTKEY] Unlocked %d achievements from file.", n);
 }

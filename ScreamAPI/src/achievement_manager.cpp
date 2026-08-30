@@ -231,6 +231,18 @@ static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnloc
     TaggedClientData cd{Data->ClientData};
     bool isStatIngestFollowUp = cd.isTagged();
     auto* achievement = static_cast<Overlay_Achievement*>(cd.untag());
+
+    // Handle null achievement (from unlockAchievementById — hidden achievements
+    // not in our list). Just log the result, no state to update.
+    if (!achievement) {
+        if (Data->ResultCode == EOS_EResult::EOS_Success) {
+            Logger::info("[ACH] Successfully unlocked achievement by ID (no UI entry)");
+        } else {
+            Logger::info("[ACH] Unlock by ID returned: %s", EOS_EResult_ToString(Data->ResultCode));
+        }
+        return;
+    }
+
     if (Data->ResultCode == EOS_EResult::EOS_Success) {
         Logger::info("Successfully unlocked the achievement: %s", achievement->AchievementId);
         // State will be flipped to Unlocked by OnAchievementsUnlockedV2 when the
@@ -421,6 +433,34 @@ void unlockAchievement(Overlay_Achievement* achievement) {
     };
 
     EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
+}
+
+// ── Unlock by ID string ─────────────────────────────────────────────────────
+// Used by the hotkey handler when an achievement ID from unlock_list.txt
+// isn't in our achievements list (e.g., hidden achievements that
+// QueryDefinitions excluded). The EOS SDK doesn't need the achievement to
+// be in our list — it just sends the ID to the server.
+void unlockAchievementById(const char* achievementId) {
+    if (!achievementId || !achievementId[0]) return;
+
+    Logger::info("[ACH] Unlocking achievement by ID (not in list): %s", achievementId);
+
+    // We need a persistent copy of the ID string because the EOS SDK holds
+    // the pointer past this function call. Allocate on heap, leak intentionally
+    // (the SDK copies it internally before the callback fires).
+    const char* idCopy = Util::copy_c_string(achievementId);
+
+    EOS_Achievements_UnlockAchievementsOptions Options = {
+        EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST,
+        getProductUserId(),
+        &idCopy,
+        1
+    };
+
+    // Use nullptr for ClientData since we don't have an Overlay_Achievement
+    // to track. The OnUnlockAchievementsComplete callback will see nullptr
+    // and just log the result without updating any UI state.
+    EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, nullptr, OnUnlockAchievementsComplete);
 }
 
 // ----------------------------------------------------------------------------
