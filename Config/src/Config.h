@@ -32,6 +32,12 @@ bool EnableDX12Hook();
 // DLC
 bool UnlockAllDLC();
 bool ForceSuccess();
+// EAC (Easy Anti-Cheat) mode
+bool EACMode();         // Master switch for EAC-specific patches:
+                        //   game-handle capture, piggyback, fallbacks, etc.
+                        // Defaults to false — non-EAC games are unaffected.
+bool EACNoServerMode(); // When true, Ecom hooks skip the real SDK and return
+                        // fake results locally (no server roundtrip). Set under [EAC].
 // DLC_List (legacy explicit ID list)
 std::vector<std::string> DLC_List();
 

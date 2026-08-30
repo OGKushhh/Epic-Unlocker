@@ -128,6 +128,11 @@ When you press a hotkey or click unlock, it calls the original (hooked) `EOS_Ach
 The external GUI communicates with the in-game DLL over a named pipe. Unlock commands are queued and executed safely on the game thread during `EOS_Platform_Tick` – avoiding any thread-safety issues with the EOS SDK.
 
 ---
+## 🛡️ EAC (Easy Anti-Cheat) Games
+
+ScreamAPI partially supports EAC-protected EOS games (e.g., *Deceive Inc.*) via the `[EAC]` config section in `ScreamAPI.ini`. Enable `EACMode = True` (and `EACNoServerMode = True`) to make achievements unlock despite anti-cheat silencing breaking dual-platform auth.
+
+For the full deployment recipe, troubleshooting, per-game status, and the on-disk SDK patcher, see **[EAC_Guide.md](https://github.com/OGKushhh/Epic-Unlocker/tree/main/Docs/EAC_Guide.md)**.
 
 ## ⚙️ Configuration
 
@@ -166,6 +171,10 @@ ForceEpicOverlay              = False     ; Re-enable the original Epic overlay 
 [DLC]
 UnlockAllDLC                  = True      ; Respond positively to all DLC requests
 ForceSuccess                  = False      ; Always return EOS_SUCCESS even if internal checks fail
+
+[EAC]
+EACMode                       = False     ; Master switch for EAC-specific patches:
+EACNoServerMode               = False     ; When True, Ecom hooks return fake results immediately, without contacting the EOS server (no server roundtrip).
 
 ; ----------------------------------------------------------------------
 ; NEW: Per-item DLC override (replaces old [DLC_List] for fine control)

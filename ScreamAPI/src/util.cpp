@@ -4,6 +4,7 @@
 #include "eos-sdk/eos_auth.h"
 #include "eos-sdk/eos_stats.h"
 #include "Logger.h"
+#include "Config.h"
 
 namespace Util{
 
@@ -17,6 +18,11 @@ std::atomic<EOS_HAchievements>  g_fallback_hAchievements{nullptr};
 std::atomic<EOS_ProductUserId>  g_fallback_productUserId{nullptr};
 std::atomic<EOS_EpicAccountId>  g_fallback_epicAccountId{nullptr};
 static std::atomic<bool> g_fallback_captured{false};
+
+// Externs: defined in eos_intercept.cpp, used here
+extern std::atomic<EOS_HPlatform> g_loginPlatform;
+std::atomic<EOS_HAchievements> g_gameHAchievements{nullptr};
+std::atomic<EOS_HStats> g_gameHStats{nullptr};
 
 void TryCaptureFallbackHandles(EOS_HAchievements hAch, EOS_ProductUserId userId) {
     if (!hAch) return;
@@ -65,7 +71,20 @@ EOS_HConnect getHConnect(){
         return result;
 }
 
+EOS_HAchievements getGameHAchievements(){
+        return g_gameHAchievements.load(std::memory_order_relaxed);
+}
+
 EOS_HAchievements getHAchievements(){
+        // EAC mode: prefer the handle captured from the game's own call (correct auth session).
+        // In non-EAC mode, ScreamAPI's captured HPlatform is the right one and the
+        // game-handle capture is a no-op (g_gameHAchievements stays null).
+        if (Config::EACMode()) {
+            auto gameHandle = g_gameHAchievements.load(std::memory_order_relaxed);
+            if(gameHandle) { Logger::debug("[UTIL] getHAchievements: using GAME handle %p (EAC mode)", (void*)gameHandle); return gameHandle; }
+            Logger::debug("[UTIL] getHAchievements: game handle is NULL (EAC mode), falling through to platform");
+        }
+
         // Normal path: derive from platform handle
         auto platform = getHPlatform();
         if (platform) {
@@ -85,6 +104,12 @@ EOS_HAchievements getHAchievements(){
 }
 
 EOS_HStats getHStats(){
+        // EAC mode: prefer the handle captured from the game's own call (correct auth session).
+        if (Config::EACMode()) {
+            auto gameStats = g_gameHStats.load(std::memory_order_relaxed);
+            if(gameStats) { Logger::debug("[UTIL] getHStats: using GAME handle %p (EAC mode)", (void*)gameStats); return gameStats; }
+        }
+
         // Don't cache - platform might be created after first call
         auto platform = getHPlatform();
         if(platform == nullptr) {
@@ -108,8 +133,16 @@ bool isEOSPlatformReady(){
                 return (hAchievements != nullptr);
         }
 
-        // UE5.4+ OSSv2 fallback: check if we captured handles from game calls
-        return HasFallbackHandles();
+        // EAC mode / UE5.4+ OSSv2 fallback: check if we captured handles from game calls.
+        // The fallback ProductUserId is only meaningful when EACMode is on (game-handle capture).
+        if (Config::EACMode() || HasFallbackHandles()) {
+            return HasFallbackHandles();
+        }
+        return false;
+}
+
+void ResetFallbackCapture(){
+    g_fallback_captured.store(false, std::memory_order_relaxed);
 }
 
 void logPlatformStatus(){

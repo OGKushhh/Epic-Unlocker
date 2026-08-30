@@ -2,6 +2,7 @@
 #include "achievement_manager.h"
 #include "ScreamAPI.h"
 #include "util.h"
+#include "Config.h"
 #include "eos-sdk/eos_achievements.h"
 #include "eos-sdk/eos_stats.h"
 #include "PipeServer.h"
@@ -135,6 +136,40 @@ void printPlayerAchievement(EOS_Achievements_PlayerAchievement* achievement) {
         }
         Logger::ach("%s", ss.str().c_str());
     }
+}
+
+// Check if an achievement exists by ID
+bool findAchievementById(const char* id) {
+    for (const auto& achievement : achievements) {
+        if (achievement.AchievementId && !strcmp(achievement.AchievementId, id))
+            return true;
+    }
+    return false;
+}
+
+// Public wrappers for eos_intercept.cpp
+bool findAchievementByIdPublic(const char* id) {
+    return findAchievementById(id);
+}
+
+void createFallbackAchievement(const char* id, bool unlocked, float progress) {
+    std::lock_guard<std::mutex> lk(GetAchievementsMutex());
+    if (findAchievementById(id)) return; // already exists
+    Overlay_Achievement newAch;
+    newAch.AchievementId = Util::copy_c_string(id);
+    newAch.UnlockedDisplayName = newAch.AchievementId;
+    newAch.UnlockedDescription = nullptr;
+    newAch.UnlockedIconURL = nullptr;
+    newAch.IconTexture = nullptr;
+    newAch.IsHidden = false;
+    newAch.UnlockState = unlocked ? UnlockState::Unlocked : UnlockState::Locked;
+    newAch.Progress = progress;
+    newAch.UnlockTime = unlocked ? 1 : -1;
+    newAch.StatThresholdLabel = nullptr;
+    newAch.StatThresholds = nullptr;
+    newAch.StatThresholdsCount = 0;
+    achievements.push_back(newAch);
+    Logger::info("[ACH] Created fallback achievement entry from player data: %s", id);
 }
 
 void findAchievement(const char* achievementID, std::function<void(Overlay_Achievement&)> callback) {
@@ -476,6 +511,27 @@ void EOS_CALL queryPlayerAchievementsComplete(const EOS_Achievements_OnQueryPlay
         // Previously we only used this as a boolean (unlocked vs locked).
         int64_t capturedUnlockTime = OutAchievement->UnlockTime;
 
+        // EAC mode: if the definitions query failed, the achievements list is empty.
+        // Create a minimal entry from player data so the GUI can still request unlocks.
+        // Outside EAC mode the definitions query should always succeed, so skip.
+        if (Config::EACMode() && !findAchievementById(OutAchievement->AchievementId)) {
+            Overlay_Achievement newAch;
+            newAch.AchievementId = Util::copy_c_string(OutAchievement->AchievementId);
+            newAch.UnlockedDisplayName = newAch.AchievementId; // fallback name
+            newAch.UnlockedDescription = nullptr;
+            newAch.UnlockedIconURL = nullptr;
+            newAch.IconTexture = nullptr;
+            newAch.IsHidden = false;
+            newAch.UnlockState = UnlockState::Locked;
+            newAch.Progress = 0.0f;
+            newAch.UnlockTime = -1;
+            newAch.StatThresholdLabel = nullptr;
+            newAch.StatThresholds = nullptr;
+            newAch.StatThresholdsCount = 0;
+            achievements.push_back(newAch);
+            Logger::info("[ACH] Created fallback achievement entry from player data: %s", OutAchievement->AchievementId);
+        }
+
         if (capturedUnlockTime != -1) {
             findAchievement(OutAchievement->AchievementId, [capturedProgress, thresholdLabel, capturedUnlockTime](Overlay_Achievement& achievement) {
                 achievement.UnlockState = UnlockState::Unlocked;
@@ -711,6 +767,15 @@ void queryAchievementDefinitions() {
     };
 
     Logger::debug("[ACH] Calling EOS_Achievements_QueryDefinitions");
+
+    // Re-check hAchievements right before the call — the platform may have been
+    // released between the initial check (line 738) and here (retry thread scenario)
+    hAchievements = getHAchievements();
+    if (hAchievements == nullptr) {
+        Logger::error("[ACH] Cannot query achievements - HAchievements became NULL before call");
+        return;
+    }
+
     EOS_Achievements_QueryDefinitions(
         hAchievements,
         &QueryDefinitionsOptions,

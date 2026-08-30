@@ -30,4 +30,8 @@ void unlockAchievement(Overlay_Achievement* achievement);
 void refresh();   // manually refresh definitions and player achievements
 std::mutex& GetAchievementsMutex();
 
+// Public helpers for piggyback achievement capture (used by eos_intercept.cpp)
+bool findAchievementByIdPublic(const char* id);
+void createFallbackAchievement(const char* id, bool unlocked, float progress);
+
 }

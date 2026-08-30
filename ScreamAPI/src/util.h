@@ -20,6 +20,7 @@ extern std::string g_product_id;
 
 extern EOS_HPlatform hPlatform;
 
+
 // -- UE5.4+ OSSv2 Fallback Handles --------------------------------------
 // When UE5.4+ creates the EOS platform through OSSv2 internally,
 // EOS_Platform_Create is never called and hPlatform stays nullptr.
@@ -51,5 +52,9 @@ EOS_ProductUserId getProductUserId();
 char* copy_c_string(const char* c_string);
 bool isEOSPlatformReady();
 void logPlatformStatus();
+void ResetFallbackCapture();
+EOS_HAchievements getGameHAchievements();
+extern std::atomic<EOS_HAchievements> g_gameHAchievements;
+extern std::atomic<EOS_HStats> g_gameHStats;
 
 }

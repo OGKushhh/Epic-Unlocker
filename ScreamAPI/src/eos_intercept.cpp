@@ -21,6 +21,7 @@ namespace Intercept {
 // or calls through an indirect wrapper), we capture the platform handle from
 // Platform_Tick or Platform_GetXxxInterface, which always receive it.
 static std::atomic<bool> g_platformCapturedFromFallback{false};
+static std::atomic<bool> g_playerAchievementsCaptured{false};
 
 static void CapturePlatformHandleFromFallback(EOS_HPlatform Handle, const char* source) {
     if (Handle == nullptr || Util::hPlatform != nullptr) return;
@@ -373,6 +374,21 @@ void Platform_Release(Platform_Release_t original, EOS_HPlatform Handle) {
     original(Handle);
     Util::hPlatform = nullptr;
     g_platformCapturedFromFallback = false; // allow re-capture if a new platform is created
+
+    // Clear OSSv2 fallback handles - they point to the released platform's
+    // interfaces and are now dangling pointers. Without this, a retry
+    // thread would call EOS_Achievements_QueryDefinitions with a stale handle -> CRASH.
+    Util::g_fallback_hAchievements.store(nullptr, std::memory_order_relaxed);
+    Logger::info("[INTERCEPT] Cleared fallback HAchievements (platform released)");
+
+    // EAC mode: also clear game-captured handles (g_gameHAchievements, g_gameHStats).
+    // Outside EAC mode these are never set, so clearing them is a no-op.
+    if (Config::EACMode()) {
+        Util::g_gameHAchievements.store(nullptr, std::memory_order_relaxed);
+        Util::g_gameHStats.store(nullptr, std::memory_order_relaxed);
+        Logger::info("[INTERCEPT] Cleared game HAchievements + HStats (EAC mode, platform released)");
+        Util::ResetFallbackCapture();
+    }
 }
 
 void Platform_Tick(Platform_Tick_t original, EOS_HPlatform Handle) {
@@ -435,6 +451,12 @@ EOS_HStats Platform_GetStatsInterface(Platform_GetStatsInterface_t original, EOS
     auto result = original(Handle);
     if (result) {
         Logger::info("[STATS] EOS_Platform_GetStatsInterface -> %p (Stats interface available)", result);
+        // EAC mode: capture the game's HStats so we use the correct auth session for stat ingest.
+        // Outside EAC mode we leave g_gameHStats null; getHStats() derives from HPlatform as usual.
+        if (Config::EACMode()) {
+            Util::g_gameHStats.store(result, std::memory_order_relaxed);
+            Logger::info("[INTERCEPT] Captured game HStats handle: %p (EAC mode)", result);
+        }
     } else {
         Logger::warn("[STATS] EOS_Platform_GetStatsInterface -> NULL (Stats interface NOT available - stat-gated achievements may not unlock)");
     }
@@ -462,26 +484,11 @@ void Achievements_QueryPlayerAchievements(Achievements_QueryPlayerAchievements_t
 }
 
 void Achievements_UnlockAchievements(Achievements_UnlockAchievements_t original, EOS_HAchievements Handle, const EOS_Achievements_UnlockAchievementsOptions* Options, void* ClientData, const EOS_Achievements_OnUnlockAchievementsCompleteCallback CompletionDelegate) {
-    Logger::info("[INTERCEPT] EOS_Achievements_UnlockAchievements called");
     if (Options) {
-        Logger::info("[INTERCEPT]   ApiVersion: %d", Options->ApiVersion);
-        Logger::info("[INTERCEPT]   UserId: %p", Options->UserId);
-        Logger::info("[INTERCEPT]   AchievementsCount: %u", Options->AchievementsCount);
+        Logger::info("[INTERCEPT] EOS_Achievements_UnlockAchievements: %u item(s)", Options->AchievementsCount);
         for (uint32_t i = 0; i < Options->AchievementsCount; i++) {
-            Logger::info("[INTERCEPT]     Achievement ID: %s", Options->AchievementIds[i]);
+            Logger::info("[INTERCEPT]   Achievement ID: %s", Options->AchievementIds[i]);
         }
-    } else {
-        Logger::warn("[INTERCEPT]   Options is NULL!");
-    }
-
-    auto currentUserId = Util::getProductUserId();
-    auto hAchievements = Util::getHAchievements();
-    Logger::info("[INTERCEPT]   Current Util::getProductUserId() = %p", currentUserId);
-    Logger::info("[INTERCEPT]   Current Util::getHAchievements() = %p", hAchievements);
-    Logger::info("[INTERCEPT]   Handle passed to intercept = %p", Handle);
-
-    if (Options && Options->UserId != currentUserId) {
-        Logger::warn("[INTERCEPT]   UserId mismatch! Options->UserId (%p) != current Util::getProductUserId() (%p)", Options->UserId, currentUserId);
     }
 
     // If achievements not yet configured AND the config option is enabled, force configuration and postpone unlock
@@ -519,6 +526,64 @@ void Achievements_UnlockAchievements(Achievements_UnlockAchievements_t original,
 uint32_t Achievements_GetPlayerAchievementCount(Achievements_GetPlayerAchievementCount_t original, EOS_HAchievements Handle, const EOS_Achievements_GetPlayerAchievementCountOptions* Options) {
     auto result = original(Handle, Options);
     Logger::ach("[INTERCEPT] Player Achievement Count: %d", result);
+
+    // EAC mode: piggyback on the game's call to capture the correct HAchievements
+    // handle (the one tied to the game's auth session, not ScreamAPI's). Outside
+    // EAC mode we skip this entirely — the normal HPlatform-derived handle is correct.
+    if (Config::EACMode() && result > 0 && !g_playerAchievementsCaptured.exchange(true)) {
+        // ── Diagnostic: detect the dual-platform UserId mismatch ──────────────
+        // This is the canary that detects the dual-platform issue: if the game passes
+        // a different UserId than what ScreamAPI captured, achievement queries will
+        // fail with EOS_InvalidUser downstream. Without this check, the mismatch is
+        // invisible — you just see EOS_InvalidUser somewhere with no clue why.
+        if (Options) {
+            auto currentUserId = Util::getProductUserId();
+            auto hAchievements = Util::getHAchievements();
+            Logger::info("[INTERCEPT]   Options->UserId            = %p", (void*)Options->UserId);
+            Logger::info("[INTERCEPT]   Util::getProductUserId()    = %p", (void*)currentUserId);
+            Logger::info("[INTERCEPT]   Util::getHAchievements()    = %p", (void*)hAchievements);
+            Logger::info("[INTERCEPT]   Handle (game's)             = %p", (void*)Handle);
+            if (Options->UserId != currentUserId) {
+                Logger::warn("[INTERCEPT]   UserId mismatch! Game passed %p but ScreamAPI captured %p — dual-platform issue",
+                    (void*)Options->UserId, (void*)currentUserId);
+            }
+        } else {
+            Logger::warn("[INTERCEPT]   Options is NULL — cannot check UserId");
+        }
+
+        // Capture this handle — it's from the CORRECT platform (the one with auth session)
+        Util::g_gameHAchievements.store(Handle, std::memory_order_relaxed);
+        Logger::info("[INTERCEPT] Captured game HAchievements handle: %p (will use for unlock calls, EAC mode)", Handle);
+        Logger::info("[INTERCEPT] Capturing %d player achievements from game's GetPlayerAchievementCount call", result);
+        for (uint32_t i = 0; i < result; i++) {
+            EOS_Achievements_CopyPlayerAchievementByIndexOptions CopyOpts{
+                EOS_ACHIEVEMENTS_COPYPLAYERACHIEVEMENTBYINDEX_API_LATEST,
+                Util::getProductUserId(),
+                i,
+                Util::getProductUserId()
+            };
+            EOS_Achievements_PlayerAchievement* OutAchievement = nullptr;
+            auto copyResult = EOS_Achievements_CopyPlayerAchievementByIndex(
+                Handle, &CopyOpts, &OutAchievement);
+            if (copyResult == EOS_EResult::EOS_Success && OutAchievement) {
+                Logger::info("[INTERCEPT]   Player Achievement [%d]: %s (UnlockTime=%lld, Progress=%.2f)",
+                    i, OutAchievement->AchievementId,
+                    (long long)OutAchievement->UnlockTime,
+                    OutAchievement->Progress);
+
+                // Create a fallback Overlay_Achievement entry if it doesn't exist
+                if (!AchievementManager::findAchievementByIdPublic(OutAchievement->AchievementId)) {
+                    AchievementManager::createFallbackAchievement(
+                        OutAchievement->AchievementId,
+                        OutAchievement->UnlockTime != -1,
+                        OutAchievement->Progress);
+                }
+                EOS_Achievements_PlayerAchievement_Release(OutAchievement);
+            }
+        }
+        Logger::info("[INTERCEPT] Player achievement capture complete");
+    }
+
     return result;
 }
 
@@ -577,6 +642,24 @@ void Ecom_QueryOwnership(Ecom_QueryOwnership_t original, EOS_HEcom Handle, const
         }
     } else {
         Logger::warn("[INTERCEPT] Game queried DLC ownership without Options parameter");
+    }
+
+    if (Config::EACNoServerMode()) {
+        // EACNoServerMode: skip the real SDK call entirely.
+        // Build a fake callback info and call the game's callback directly.
+        Logger::info("[INTERCEPT] EACNoServerMode: returning %zu ownership(s) without server roundtrip",
+            g_ownerships.size());
+        EOS_Ecom_QueryOwnershipCallbackInfo info = {};
+        info.ClientData = ClientData;
+        info.ResultCode = EOS_EResult::EOS_Success;
+        info.ItemOwnershipCount = (uint32_t)g_ownerships.size();
+        info.ItemOwnership = g_ownerships.data();
+        Logger::dlc("[INTERCEPT] Responding with %d ownership(s):", info.ItemOwnershipCount);
+        for(uint32_t i = 0; i < info.ItemOwnershipCount; i++){
+            Logger::dlc("[INTERCEPT]   [Owned] %s", info.ItemOwnership[i].Id);
+        }
+        CompletionDelegate(&info);
+        return;
     }
 
     if (Config::EnableOwnershipUnlocker()) {
@@ -675,6 +758,16 @@ void Ecom_QueryOwnershipBySandboxIds(Ecom_QueryOwnershipBySandboxIds_t original,
 
 void Ecom_QueryOwnershipToken(Ecom_QueryOwnershipToken_t original, EOS_HEcom Handle, const EOS_Ecom_QueryOwnershipTokenOptions* Options, void* ClientData, const EOS_Ecom_OnQueryOwnershipTokenCallback CompletionDelegate) {
     Logger::debug("[INTERCEPT] EOS_Ecom_QueryOwnershipToken called");
+    if (Config::EACNoServerMode()) {
+        // EACNoServerMode: can't forge signed tokens, return success with empty token.
+        Logger::info("[INTERCEPT] EACNoServerMode: skipping QueryOwnershipToken (signed tokens cannot be forged)");
+        EOS_Ecom_QueryOwnershipTokenCallbackInfo info = {};
+        info.ClientData = ClientData;
+        info.ResultCode = EOS_EResult::EOS_Success;
+        info.OwnershipToken = nullptr;
+        CompletionDelegate(&info);
+        return;
+    }
 
     if (Config::EnableOwnershipUnlocker()) {
         auto container = new ScreamAPI::OriginalDataContainer(ClientData, CompletionDelegate);
@@ -714,6 +807,21 @@ void Ecom_QueryEntitlements(Ecom_QueryEntitlements_t original, EOS_HEcom Handle,
         Logger::dlc("[INTERCEPT]   %s", id);
         if (Config::IsDlcUnlocked(std::string(id), true))
             g_entitlement_map[id] = "Unknown Title";
+    }
+
+    if (Config::EACNoServerMode()) {
+        // EACNoServerMode: skip the real SDK call entirely.
+        InjectExtraEntitlements();
+        g_entitlement_ids.clear();
+        for (auto& [id, title] : g_entitlement_map)
+            g_entitlement_ids.push_back(id);
+        Logger::info("[INTERCEPT] EACNoServerMode: returning %zu entitlement(s) without server roundtrip",
+            g_entitlement_map.size());
+        EOS_Ecom_QueryEntitlementsCallbackInfo info = {};
+        info.ClientData = ClientData;
+        info.ResultCode = EOS_EResult::EOS_Success;
+        CompletionDelegate(&info);
+        return;
     }
 
     auto container = new ScreamAPI::OriginalDataContainer(ClientData, CompletionDelegate);
@@ -914,7 +1022,24 @@ EOS_ProductUserId Connect_GetLoggedInUserByIndex(Connect_GetLoggedInUserByIndex_
 
 void Auth_Login(Auth_Login_t original, EOS_HAuth Handle, const EOS_Auth_LoginOptions* Options, void* ClientData, const EOS_Auth_OnLoginCallback CompletionDelegate) {
     Logger::info("[INTERCEPT] EOS_Auth_Login called");
-    original(Handle, Options, ClientData, CompletionDelegate);
+    auto container = new ScreamAPI::OriginalDataContainer(ClientData, CompletionDelegate);
+    original(Handle, Options, container, [](const EOS_Auth_LoginCallbackInfo* Data){
+        ScreamAPI::proxyCallback<EOS_Auth_LoginCallbackInfo>(Data, &Data->ClientData,
+            [](EOS_Auth_LoginCallbackInfo* mData){
+                if(mData->ResultCode == EOS_EResult::EOS_Success){
+                    Logger::info("[INTERCEPT] EOS Auth login successful");
+                    // EAC mode: capture EpicAccountId from auth callback so it survives
+                    // platform recreation (OSSv2 may release/recreate platforms).
+                    if (Config::EACMode() && mData->LocalUserId) {
+                        Util::g_fallback_epicAccountId.store(mData->LocalUserId, std::memory_order_relaxed);
+                        Logger::info("[INTERCEPT] Captured EpicAccountId from auth callback: %p (EAC mode)", (void*)mData->LocalUserId);
+                    }
+                } else {
+                    Logger::error("[INTERCEPT] EOS Auth login failed: %s", EOS_EResult_ToString(mData->ResultCode));
+                }
+            }
+        );
+    });
 }
 
 EOS_EpicAccountId Auth_GetLoggedInAccountByIndex(Auth_GetLoggedInAccountByIndex_t original, EOS_HAuth Handle, int32_t Index) {

@@ -35,6 +35,10 @@ bool bEnableDX12Hook = false;
 // DLC
 bool bUnlockAllDLC = true;
 bool bForceSuccess = true;
+// EAC (Easy Anti-Cheat) mode
+bool bEACMode         = false;  // Master switch for EAC-specific patches. Default false.
+bool bEACNoServerMode = false;  // When true, Ecom hooks return fake results without
+                              // contacting the EOS server (no server roundtrip).
 // DLC_List (legacy)
 std::vector<std::string> vDLC_List;
 // Custom path
@@ -94,6 +98,10 @@ std::map<std::string, std::map<std::string, void*>> configMap = {
     {"DLC", {
         {"UnlockAllDLC", &bUnlockAllDLC},
         {"ForceSuccess", &bForceSuccess},
+    }},
+    {"EAC", {
+        {"EACMode",         &bEACMode},
+        {"EACNoServerMode", &bEACNoServerMode},
     }},
 };
 
@@ -200,6 +208,8 @@ bool ForceEpicOverlay()           { return bForceEpicOverlay; }
 bool EnableDX12Hook()             { return bEnableDX12Hook; }
 bool UnlockAllDLC()               { return bUnlockAllDLC; }
 bool ForceSuccess()               { return bForceSuccess; }
+bool EACMode()                    { return bEACMode; }
+bool EACNoServerMode()            { return bEACNoServerMode; }
 std::vector<std::string> DLC_List() { return vDLC_List; }
 std::string GetCustomEOSPath()    { return sCustomEOSPath; }
 std::string NamespaceId()         { return sNamespaceId; }
