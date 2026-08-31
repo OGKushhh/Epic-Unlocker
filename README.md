@@ -130,7 +130,7 @@ The external GUI communicates with the in-game DLL over a named pipe. Unlock com
 ---
 ## 🛡️ EAC (Easy Anti-Cheat) Games
 
-ScreamAPI partially supports EAC-protected EOS games (e.g., *Deceive Inc.*) via the `[EAC]` config section in `ScreamAPI.ini`. Enable `EACMode = True` (and `EACNoServerMode = True`) to make achievements unlock despite anti-cheat silencing breaking dual-platform auth.
+Epic Unlocker partially supports EAC-protected EOS games (e.g., *Deceive Inc.*) via the `[EAC]` config section in `ScreamAPI.ini`. Enable `EACMode = True` (and `EACNoServerMode = True`) to make achievements unlock despite anti-cheat silencing breaking dual-platform auth.
 
 For the full deployment recipe, troubleshooting, per-game status, and the on-disk SDK patcher, see **[EAC_Guide.md](https://github.com/OGKushhh/Epic-Unlocker/tree/main/Docs/EAC_Guide.md)**.
 
