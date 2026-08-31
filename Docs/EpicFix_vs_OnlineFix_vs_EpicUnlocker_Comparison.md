@@ -1,4 +1,4 @@
-# EpicFix vs OnlineFix vs ScreamAPI — Ultimate Analysis
+# EpicFix vs OnlineFix vs Epic Unlocker — Ultimate Analysis
 
 > Complete findings from reverse-engineering, decompilation, binary diffing, runtime testing,
 > and source code analysis across all three EOS unlocker variants.
@@ -13,11 +13,11 @@
 2. Component Map — All Variants
 3. The Two SDK Patches (OnlineFix only)
 4. Architecture Comparison — Deep Dive
-5. EACNoServerMode — ScreamAPI's Ecom Bypass
+5. EACNoServerMode — Epic Unlocker's Ecom Bypass
 6. The EAC Certificate Finding — THE Critical Missing Piece
 7. OnlineFix64.dll — Static Analysis Results
 8. EpicFix — Deep Decompilation
-9. Three-Way Comparison: ScreamAPI vs OnlineFix vs EpicFix
+9. Three-Way Comparison: Epic Unlocker vs OnlineFix vs EpicFix
 10. Security & Trust Considerations
 11. Composability
 
@@ -30,10 +30,10 @@ work without legitimate ownership.
 
 | Tool | Core approach | EAC bypass | DLC/ownership | Achievements | Auth dependency |
 |---|---|---|---|---|---|
-| **ScreamAPI** | DLL proxy + callback wrapping | None (relies on cert files) | Calls real SDK → modifies result | Hooks real SDK (with EACMode fix) | Yes — server validates auth |
-| **ScreamAPI + `[EAC]` config** | DLL proxy + local Ecom stub + game-handle capture | None (cert files) | Returns "owned" locally (no server) | Uses game's auth session (EACMode) | Ecom: No. Achievements: game's session |
+| **Epic Unlocker** | DLL proxy + callback wrapping | None (relies on cert files) | Calls real SDK → modifies result | Hooks real SDK (with EACMode fix) | Yes — server validates auth |
+| **Epic Unlocker + `[EAC]` config** | DLL proxy + local Ecom stub + game-handle capture | None (cert files) | Returns "owned" locally (no server) | Uses game's auth session (EACMode) | Ecom: No. Achievements: game's session |
 | **OnlineFix** | SDK patches + packed Ecom emulator | SDK patches (func1/func2) | Local stub (via VMProtected DLL) | Pass-through | No — never contacts Epic for Ecom |
-| **EpicFix** | DLL proxy + Steamworks bridge | None needed (no EAC games) | ScreamAPI shim | ScreamAPI shim | Steam (not Epic) |
+| **EpicFix** | DLL proxy + Steamworks bridge | None needed (no EAC games) | Epic Unlocker shim | Epic Unlocker shim | Steam (not Epic) |
 
 **Key finding (2026-08-30)**: The cert files (`base.cer`, `base.bin`, `runtime.conf`) are the universal requirement — they satisfy EAC's loader. Whether SDK patches are additionally needed depends on whether the game enforces EAC's runtime reports. Our confirmed games (Deceive Inc., The Riflemen) don't enforce runtime reports — cert files alone work.
 
@@ -62,14 +62,14 @@ work without legitimate ownership.
 | `EpicFix64.dll` (500 KB) | **Lightly packed** — 474/480 functions readable. EOS API interception + Steamworks bridge |
 | `EpicFix.ini` | Config: `[Info] Id=6300`, `[ScopeFlags] Country=False, FriendsList=False` |
 | `winhttp.dll` (7.3 MB) | Koaloader proxy — auto-loads ScreamAPI64.dll |
-| `ScreamAPI64.dll` (1.5 MB) | Standard ScreamAPI — DLC entitlements + achievement overlay |
-| `EOSSDK-Win64-Shipping.dll` | **Pristine** — ScreamAPI loads it at runtime and forwards calls |
+| `ScreamAPI64.dll` (1.5 MB) | Standard Epic Unlocker — DLC entitlements + achievement overlay |
+| `EOSSDK-Win64-Shipping.dll` | **Pristine** — Epic Unlocker loads it at runtime and forwards calls |
 
-### 2.3 ScreamAPI (standalone, our project)
+### 2.3 Epic Unlocker (standalone, our project)
 
 | Component | Role |
 |---|---|
-| `EOSSDK-Win64-Shipping.dll` (proxy) | ScreamAPI proxy — intercepts EOS calls, loads real SDK |
+| `EOSSDK-Win64-Shipping.dll` (proxy) | Epic Unlocker proxy — intercepts EOS calls, loads real SDK |
 | `EOSSDK-Win64-Shipping_o.dll` | Renamed real SDK |
 | `ScreamAPI.ini` | Config: `[EAC] EACMode`, `EACNoServerMode`, `UnlockAllDLC`, achievement settings |
 
@@ -145,18 +145,18 @@ For most single-player / co-op EOS games with EAC, cert-only should suffice.
 
 ### 4.1 DLC/Ownership bypass — the critical difference
 
-| | ScreamAPI (default) | ScreamAPI + `[EAC] EACNoServerMode` | OnlineFix |
+| | Epic Unlocker (default) | Epic Unlocker + `[EAC] EACNoServerMode` | OnlineFix |
 |---|---|---|---|
 | Hook layer | Public EOS API (`EOS_Ecom_QueryOwnership`) | Same | Internal vtable / VMProtected |
-| Flow | Game → ScreamAPI → real SDK → **Epic server** → modify result | Game → ScreamAPI → **return "owned" immediately** | Game → OnlineFix stub → **return "owned" immediately** |
+| Flow | Game → Epic Unlocker → real SDK → **Epic server** → modify result | Game → Epic Unlocker → **return "owned" immediately** | Game → OnlineFix stub → **return "owned" immediately** |
 | `original()` called? | Yes | **No** | **No** |
 | Server roundtrip? | Yes | **No** | **No** |
 | Auth dependency | Yes — server validates token | **No** — server never contacted | **No** |
 | Failure with broken auth | `EOS_InvalidAuth` | Works (no server) | Works (no server) |
 
-**This is the root cause of all our `EOS_InvalidAuth` failures**: ScreamAPI's default mode
+**This is the root cause of all our `EOS_InvalidAuth` failures**: Epic Unlocker's default mode
 calls `original()` which contacts Epic's server. When auth is broken (EAC, cert mismatch,
-flagged account), the server rejects the request before ScreamAPI can modify the result.
+flagged account), the server rejects the request before Epic Unlocker can modify the result.
 
 `EACNoServerMode` (our patch) fixes this by skipping `original()` and returning fake results
 directly — matching OnlineFix's architecture.
@@ -173,7 +173,7 @@ directly — matching OnlineFix's architecture.
 
 ### 4.3 Auth chain
 
-| | OnlineFix | EpicFix | ScreamAPI |
+| | OnlineFix | EpicFix | Epic Unlocker |
 |---|---|---|---|
 | Auth method | Real Epic OAuth (WebView2) | Real Epic OAuth Device Auth (RFC 8628) | Game's own auth |
 | Token validity | Real token from real login | Real token from real login | Real token |
@@ -182,7 +182,7 @@ directly — matching OnlineFix's architecture.
 
 ---
 
-## 5. EACNoServerMode — ScreamAPI's Ecom Bypass
+## 5. EACNoServerMode — Epic Unlocker's Ecom Bypass
 
 ### What it does
 
@@ -297,7 +297,7 @@ EpicFix is a **full EOS ↔ Steam translation shim** — not just an ownership s
 
 ### EOS Feature Handling Matrix
 
-| EOS Feature | EpicFix | ScreamAPI |
+| EOS Feature | EpicFix | Epic Unlocker |
 |---|---|---|
 | **Auth** (`EOS_Connect_*`, `EOS_Auth_*`) | **Real OAuth Device Auth flow** — obtains genuine Epic token via browser login | Untouched — real Epic auth |
 | **Ownership** (`EOS_Ecom_QueryOwnership`) | **Hooked** — callback result flipped to "owned" (base game + all DLC via GraphQL scan) | **Hooked** — adds DLC entitlements to real ownership results |
@@ -337,7 +337,7 @@ Real auth, real server call, real network traffic all happen normally. The answe
 
 ### The GraphQL-Powered "Unlock All"
 
-Unlike ScreamAPI (which uses a static INI list of DLC IDs), EpicFix **dynamically discovers** all entitlements by querying Epic's GraphQL catalog endpoint at runtime. The `UnlockAllEntitlements` flag triggers this scan, which fetches up to 1000 offers for the configured namespace and fakes ownership of every item found.
+Unlike Epic Unlocker (which uses a static INI list of DLC IDs), EpicFix **dynamically discovers** all entitlements by querying Epic's GraphQL catalog endpoint at runtime. The `UnlockAllEntitlements` flag triggers this scan, which fetches up to 1000 offers for the configured namespace and fakes ownership of every item found.
 
 ### 8.4 How EpicFix Players Can Sometimes Join Real Players
 
@@ -362,7 +362,7 @@ Not all multiplayer traffic goes through EOS. Several scenarios allow cross-play
 
 ### 8.5 The Entitlement Token Wall — The Shared Ceiling
 
-Both ScreamAPI and EpicFix hit the same hard limit: **cryptographic entitlement tokens**.
+Both Epic Unlocker and EpicFix hit the same hard limit: **cryptographic entitlement tokens**.
 
 Some games don't just call `EOS_Ecom_QueryOwnership` — they call `EOS_Ecom_QueryEntitlements`, which returns **signed entitlement tokens**. These are JWT-like blobs signed by Epic's private key. The game can verify the signature locally using Epic's public key.
 
@@ -372,7 +372,7 @@ Some games don't just call `EOS_Ecom_QueryOwnership` — they call `EOS_Ecom_Que
 | Modify the ownership boolean in memory | Create a token that passes signature verification |
 | Hook the callback to change the response | Defeat local cryptographic validation of the token itself |
 
-This is the definitive barrier for both ScreamAPI and EpicFix. No amount of callback hooking gets past cryptographic verification of signed tokens.
+This is the definitive barrier for both Epic Unlocker and EpicFix. No amount of callback hooking gets past cryptographic verification of signed tokens.
 
 ### 8.6 Deep Decompilation Details
 
@@ -556,11 +556,11 @@ EpicFix registers cleanup routines for all subsystems. Each frees its associated
 
 ---
 
-## 9. Three-Way Comparison: ScreamAPI vs OnlineFix vs EpicFix
+## 9. Three-Way Comparison: Epic Unlocker vs OnlineFix vs EpicFix
 
 ### 9.1 Full Dimension Comparison
 
-| Dimension | ScreamAPI | OnlineFix | EpicFix |
+| Dimension | Epic Unlocker | OnlineFix | EpicFix |
 |---|---|---|---|
 | **Purpose** | Unlock DLC/achievements on legitimate accounts | Bypass EAC + Ecom emulation | Bridge EOS ↔ Steam for cross-play |
 | **Injection method** | DLL proxy of `eossdk-win64-shipping.dll` | `winmm.dll` proxy → preloader → patched SDK + OnlineFix64.dll | DLL proxy via `winmm.dll` → loads EpicFix64.dll |
@@ -584,11 +584,11 @@ EpicFix registers cleanup routines for all subsystems. Each frees its associated
 
 ### 9.2 What All Three Tools Share
 
-1. **DLL proxy injection** — Same concept, different entry points. ScreamAPI proxies `eossdk-win64-shipping.dll` directly; OnlineFix and EpicFix proxy `winmm.dll` as a loader.
+1. **DLL proxy injection** — Same concept, different entry points. Epic Unlocker proxies `eossdk-win64-shipping.dll` directly; OnlineFix and EpicFix proxy `winmm.dll` as a loader.
 
 2. **EOS export interception** — All three sit between the game and EOS. Same API surface: `EOS_Ecom_*`, `EOS_Achievements_*`, `EOS_P2P_*`, `EOS_Lobby_*`.
 
-3. **Ownership spoofing via callback hooking** — All three intercept the ownership query callback and modify `EOS_Owner` before the game sees it. ScreamAPI adds DLC; OnlineFix returns "owned" locally; EpicFix adds base game + all DLC (via GraphQL).
+3. **Ownership spoofing via callback hooking** — All three intercept the ownership query callback and modify `EOS_Owner` before the game sees it. Epic Unlocker adds DLC; OnlineFix returns "owned" locally; EpicFix adds base game + all DLC (via GraphQL).
 
 4. **Config-driven** — `ScreamAPI.ini` / `OnlineFix.ini` / `EpicFix.ini`. All configure what to spoof/skip.
 
@@ -596,13 +596,13 @@ EpicFix registers cleanup routines for all subsystems. Each frees its associated
 
 6. **Same hard limit** — None can forge cryptographically signed entitlement tokens.
 
-7. **Real Epic authentication** — All ultimately rely on real Epic auth. ScreamAPI uses the game's existing auth flow; OnlineFix uses EGSAuthLauncher (WebView2); EpicFix performs its own OAuth Device Authorization flow.
+7. **Real Epic authentication** — All ultimately rely on real Epic auth. Epic Unlocker uses the game's existing auth flow; OnlineFix uses EGSAuthLauncher (WebView2); EpicFix performs its own OAuth Device Authorization flow.
 
-8. **HTTP communication with Epic servers** — ScreamAPI lets the real SDK handle HTTP; OnlineFix and EpicFix make direct HTTP/GraphQL calls to `api.epicgames.dev` and `graphql.epicgames.com`.
+8. **HTTP communication with Epic servers** — Epic Unlocker lets the real SDK handle HTTP; OnlineFix and EpicFix make direct HTTP/GraphQL calls to `api.epicgames.dev` and `graphql.epicgames.com`.
 
 ### 9.3 Injection Method Comparison
 
-| | ScreamAPI | OnlineFix | EpicFix |
+| | Epic Unlocker | OnlineFix | EpicFix |
 |---|---|---|---|
 | **Proxy DLL** | `eossdk-win64-shipping.dll` | `winmm.dll` → preloader | `winmm.dll` |
 | **Interception granularity** | Only EOS calls | EOS calls + SDK binary patches | Every `winmm` call forwarded + EOS hooks loaded |
@@ -610,13 +610,13 @@ EpicFix registers cleanup routines for all subsystems. Each frees its associated
 | **Detection surface** | Smaller — game only loads one proxy | Medium — `winmm.dll` proxy + SDK patches | Larger — `winmm.dll` proxy is a well-known crack signature |
 | **Universal?** | Only works for EOS games | Works for EOS games with EAC | Works for any game that links `winmm.dll` (nearly all Windows games) |
 
-ScreamAPI's approach is cleaner because it only intercepts EOS calls. The `winmm.dll` trick (used by both OnlineFix and EpicFix) is older and more detectable but works universally since every Windows game links `winmm.dll`.
+Epic Unlocker's approach is cleaner because it only intercepts EOS calls. The `winmm.dll` trick (used by both OnlineFix and EpicFix) is older and more detectable but works universally since every Windows game links `winmm.dll`.
 
 ---
 
 ## 10. Security & Trust Considerations
 
-### 10.1 ScreamAPI (our project)
+### 10.1 Epic Unlocker (our project)
 
 | Aspect | Status |
 |---|---|
@@ -657,7 +657,7 @@ ScreamAPI's approach is cleaner because it only intercepts EOS calls. The `winmm
 
 ### 10.4 Trust Model Comparison
 
-| Aspect | ScreamAPI | OnlineFix | EpicFix |
+| Aspect | Epic Unlocker | OnlineFix | EpicFix |
 |---|---|---|---|
 | Source visibility | **Fully open source** | **Closed + VMProtected** | **Closed + lightly packed** (474/480 readable) |
 | Auth handling | Uses game's existing auth, never touches tokens | Real OAuth via EGSAuthLauncher | Performs own OAuth flow — obtains and stores `refresh_token` |
@@ -671,16 +671,16 @@ ScreamAPI's approach is cleaner because it only intercepts EOS calls. The `winmm
 
 ## 11. Composability
 
-ScreamAPI and EpicFix are **complementary** — they hook different subsets of the EOS API:
+Epic Unlocker and EpicFix are **complementary** — they hook different subsets of the EOS API:
 
 - **EpicFix** handles: "Can I play this game online?" (ownership of base game + lobby/P2P emulation + Steam ↔ EOS identity translation)
-- **ScreamAPI** handles: "What DLC/achievements do I have?" (DLC entitlements + achievement hooks + stat force-ingest)
+- **Epic Unlocker** handles: "What DLC/achievements do I have?" (DLC entitlements + achievement hooks + stat force-ingest)
 
-Because they hook non-overlapping EOS functions (aside from ownership, where they can coexist since both say "owned"), **they can be stacked**: EpicFix for online access, ScreamAPI for achievement management. The real EOS SDK handles everything else.
+Because they hook non-overlapping EOS functions (aside from ownership, where they can coexist since both say "owned"), **they can be stacked**: EpicFix for online access, Epic Unlocker for achievement management. The real EOS SDK handles everything else.
 
-**Important caveat for stacking**: Since EpicFix performs its own OAuth flow and obtains its own auth token, ScreamAPI running on top will use whichever auth context is established. If the game uses EpicFix's token for achievement queries, ScreamAPI's achievement hooks will operate on that token's context. This should work correctly as long as the token has the required scopes.
+**Important caveat for stacking**: Since EpicFix performs its own OAuth flow and obtains its own auth token, Epic Unlocker running on top will use whichever auth context is established. If the game uses EpicFix's token for achievement queries, Epic Unlocker's achievement hooks will operate on that token's context. This should work correctly as long as the token has the required scopes.
 
-OnlineFix, by contrast, is **not composable** — it patches the SDK binary directly and replaces the Ecom path entirely. Stacking ScreamAPI on top of OnlineFix would be redundant (both bypass Ecom) and could conflict.
+OnlineFix, by contrast, is **not composable** — it patches the SDK binary directly and replaces the Ecom path entirely. Stacking Epic Unlocker on top of OnlineFix would be redundant (both bypass Ecom) and could conflict.
 
 ---
 

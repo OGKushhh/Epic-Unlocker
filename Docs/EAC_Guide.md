@@ -7,7 +7,7 @@
 
 ## Quick start (4 steps)
 
-### Step 1 — Install ScreamAPI as proxy
+### Step 1 — Install Epic Unlocker as proxy
 
 In the game's `Binaries\Win64\` folder (or wherever `EOSSDK-Win64-Shipping.dll` lives):
 
@@ -16,7 +16,7 @@ ren EOSSDK-Win64-Shipping.dll EOSSDK-Win64-Shipping_o.dll
 copy ScreamAPI\EOSSDK-Win64-Shipping.dll .
 ```
 
-The ScreamAPI proxy forwards all EOS calls to the renamed `_o.dll`, while intercepting the calls it cares about (achievements, Ecom).
+The Epic Unlocker proxy forwards all EOS calls to the renamed `_o.dll`, while intercepting the calls it cares about (achievements, Ecom).
 
 ### Step 2 — Configure ScreamAPI.ini
 
@@ -59,7 +59,7 @@ The patcher (`eos_patcher.pyw`) is a small GUI tool that does two jobs:
 
 **1. Installs cert files (SMART INSTALL button)**
 
-EAC's loader checks the EOS SDK against certificate files in `EasyAntiCheat/Certificates/`. The game's original certs reject our ScreamAPI proxy, so the game shows "untrusted system file" and refuses to launch.
+EAC's loader checks the EOS SDK against certificate files in `EasyAntiCheat/Certificates/`. The game's original certs reject our Epic Unlocker proxy, so the game shows "untrusted system file" and refuses to launch.
 
 The patcher bundles OnlineFix's universal cert files (base.cer, base.bin, runtime.conf) inside itself. When you click SMART INSTALL, it:
 - Finds the game's `EasyAntiCheat/` folder by walking up from the SDK location
@@ -122,7 +122,7 @@ EAC's loader is rejecting the SDK. **Fix**: Run **SMART INSTALL** again (or manu
 
 ### Achievements don't unlock (no error)
 
-Likely missing `[EAC]` config. Verify `ScreamAPI.ini` has `EACMode = True` and `EACNoServerMode = True` under `[EAC]`. Check `ScreamAPI.log` for `[INTERCEPT] EOS Auth login successful` — if missing, ScreamAPI isn't loading or `[EAC]` isn't set.
+Likely missing `[EAC]` config. Verify `ScreamAPI.ini` has `EACMode = True` and `EACNoServerMode = True` under `[EAC]`. Check `ScreamAPI.log` for `[INTERCEPT] EOS Auth login successful` — if missing, Epic Unlocker isn't loading or `[EAC]` isn't set.
 
 ### Game crashes or infinite loading
 

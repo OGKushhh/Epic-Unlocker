@@ -43,7 +43,7 @@ Achievement flow has three phases:
 
 The critical question is **who decides the unlock**:
 
-- **Client-authoritative** (single-player / PvE games): the game reports "I did X" and EOS just records it. ScreamAPI can intercept this and inject fake unlocks.
+- **Client-authoritative** (single-player / PvE games): the game reports "I did X" and EOS just records it. Epic Unlocker can intercept this and inject fake unlocks.
 - **Server-authoritative** (competitive PvP games): the dedicated server reports "player did X" and EOS verifies with the server. Client-side interception is rejected.
 
 ### 1.4 The dual-layer problem
@@ -64,9 +64,9 @@ Unreal Engine 5 games that use Redpoint's `OnlineServices` integration create **
 - Platform A: created by the game's bootstrap with one EpicAccountId
 - Platform B: created by the OSSv2 wrapper with a different EpicAccountId (or even anonymous)
 
-When ScreamAPI captures `HPlatform` from the first `EOS_Platform_Create` call, achievements queried through that handle use Platform A's auth — but the game's actual achievement calls go through Platform B. This causes `EOS_InvalidUser` / `EOS_UnexpectedError` on every achievement query.
+When Epic Unlocker captures `HPlatform` from the first `EOS_Platform_Create` call, achievements queried through that handle use Platform A's auth — but the game's actual achievement calls go through Platform B. This causes `EOS_InvalidUser` / `EOS_UnexpectedError` on every achievement query.
 
-**Fix**: capture the game's own handle from its calls to `EOS_Achievements_GetPlayerAchievementCount`, `EOS_Platform_GetStatsInterface`, and from the `Auth_Login` / `Connect_Login` callbacks. Use those captured handles for ScreamAPI's queries.
+**Fix**: capture the game's own handle from its calls to `EOS_Achievements_GetPlayerAchievementCount`, `EOS_Platform_GetStatsInterface`, and from the `Auth_Login` / `Connect_Login` callbacks. Use those captured handles for Epic Unlocker's queries.
 
 ---
 
@@ -185,7 +185,7 @@ That's a very narrow use case. For now, the silencer projects are kept as refere
 
 ## 4. Achievement Unlock Implementation
 
-This section documents the ScreamAPI patches that make achievements actually unlock. These are layered on top of the clean ScreamAPI source.
+This section documents the Epic Unlocker patches that make achievements actually unlock. These are layered on top of the clean Epic Unlocker source.
 
 ### 4.1 The dual-platform problem in detail
 
@@ -199,7 +199,7 @@ EOS_Platform_Create(opts1, &HPlatform_A);  // auth via EGS launcher ticket
 EOS_Platform_Create(opts2, &HPlatform_B);  // anonymous/secondary auth
 ```
 
-ScreamAPI's original capture:
+Epic Unlocker's original capture:
 ```cpp
 EOS_HPlatform EOS_Platform_Create(...) {
     auto result = original(...);
@@ -208,7 +208,7 @@ EOS_HPlatform EOS_Platform_Create(...) {
 }
 ```
 
-When the game calls `EOS_Achievements_QueryPlayerAchievements(HPlatform_B->HAchievements, ...)`, ScreamAPI's wrapped version uses the game's handle correctly — but when ScreamAPI's own code tries to call into EOS using `g_HPlatform->HAchievements`, that's Platform A's handle, which doesn't match Platform B's auth session → `EOS_InvalidUser`.
+When the game calls `EOS_Achievements_QueryPlayerAchievements(HPlatform_B->HAchievements, ...)`, Epic Unlocker's wrapped version uses the game's handle correctly — but when Epic Unlocker's own code tries to call into EOS using `g_HPlatform->HAchievements`, that's Platform A's handle, which doesn't match Platform B's auth session → `EOS_InvalidUser`.
 
 ### 4.2 Game-handle capture strategy
 
@@ -297,7 +297,7 @@ EOS_HStats getHStats() {
 }
 ```
 
-The game-handle-first preference ensures that even if ScreamAPI captured a fallback handle from the wrong platform, we prefer the one the game actually uses.
+The game-handle-first preference ensures that even if Epic Unlocker captured a fallback handle from the wrong platform, we prefer the one the game actually uses.
 
 ### 4.5 EACNoServerMode (Ecom emulation)
 
@@ -374,7 +374,7 @@ This was the crash at `achievement_manager.cpp:769` you kept hitting until we ad
 
 ### 4.9 `isEOSPlatformReady` accepting fallback
 
-The platform-ready check originally required the ScreamAPI-captured `HPlatform`. With dual-platform, the captured one might be Platform A while the game uses Platform B. We relaxed the check to also accept the fallback `ProductUserId`:
+The platform-ready check originally required the Epic Unlocker-captured `HPlatform`. With dual-platform, the captured one might be Platform A while the game uses Platform B. We relaxed the check to also accept the fallback `ProductUserId`:
 
 ```cpp
 bool isEOSPlatformReady() {
@@ -403,7 +403,7 @@ bool isEOSPlatformReady() {
 3. SDK 1.15.5 has stable function layouts matching both patch sites
 
 **Working setup** (full four-layer recipe):
-1. ScreamAPI proxy DLL installed as `EOSSDK-Win64-Shipping.dll` (original renamed to `_o.dll`)
+1. Epic Unlocker proxy DLL installed as `EOSSDK-Win64-Shipping.dll` (original renamed to `_o.dll`)
 2. `ScreamAPI.ini` with `[EAC] EACMode=True, EACNoServerMode=True`
 3. On-disk SDK patches via `eos_patcher.pyw` (both sites apply cleanly on 1.15.5)
 4. OnlineFix EAC cert files in `EasyAntiCheat/Certificates/` (overwriting originals)
@@ -417,7 +417,7 @@ bool isEOSPlatformReady() {
 
 ### 5.2 The Riflemen — confirmed working (2026-08-30)
 
-This was the breakthrough that confirmed the cert files are universal. Initial attempts with just ScreamAPI + patches failed with "unknown file version" / "untrusted system file" — EAC's loader rejected the patched SDK. Adding OnlineFix's cert files (`base.cer`, `base.bin`, `runtime.conf`) to the game's `EasyAntiCheat/Certificates/` folder fixed it instantly.
+This was the breakthrough that confirmed the cert files are universal. Initial attempts with just Epic Unlocker + patches failed with "unknown file version" / "untrusted system file" — EAC's loader rejected the patched SDK. Adding OnlineFix's cert files (`base.cer`, `base.bin`, `runtime.conf`) to the game's `EasyAntiCheat/Certificates/` folder fixed it instantly.
 
 **Working setup**: identical to Deceive Inc. (same four-layer recipe).
 
@@ -480,7 +480,7 @@ For the patcher's internal logic (signatures, search strategy, backup convention
 
 ### 8.1 MiniRoyale SteelShield — NOT SOLVABLE
 
-Status: **Not solvable** with our current approach. SteelShield is game-side anti-cheat with server-authoritative unlocks. ScreamAPI intercepts client-side EOS calls, which is the wrong layer.
+Status: **Not solvable** with our current approach. SteelShield is game-side anti-cheat with server-authoritative unlocks. Epic Unlocker intercepts client-side EOS calls, which is the wrong layer.
 
 Possible avenues (not pursued):
 - Reverse-engineer SteelShield itself (separate, large effort)
@@ -550,10 +550,10 @@ For the default deployment recipe, we now recommend **cert-only** as the simpler
 
 | File | Purpose |
 |---|---|
-| `/home/z/my-project/download/ScreamAPI_EACMode.zip` | Full project zip (ScreamAPI source + Config + eos_patcher.pyw + EAC Guide + this reference doc) |
+| `/home/z/my-project/download/ScreamAPI_EACMode.zip` | Full project zip (Epic Unlocker source + Config + eos_patcher.pyw + EAC Guide + this reference doc) |
 | `/home/z/my-project/download/eos_patcher.pyw` | Standalone v6 on-disk SDK patcher |
 | `/home/z/my-project/download/EAC_Silencer_and_Achievement_Reference.md` | This document (technical reference) |
-| `/home/z/my-project/download/EpicFix_vs_OnlineFix_vs_ScreamAPI_Comparison.md` | Three-way comparison (reverse engineering analysis) |
+| `/home/z/my-project/download/EpicFix_vs_OnlineFix_vs_Epic Unlocker_Comparison.md` | Three-way comparison (reverse engineering analysis) |
 | `ScreamAPI/tools/eos_patcher.pyw` (inside zip) | Bundled patcher |
 | `Docs/EAC_Guide.md` (inside zip) | Clean how-to guide |
 | `old_eac_silencer_reference/` (inside zip) | Archived standalone DLL silencer project (bugs fixed) |
@@ -566,8 +566,8 @@ For the default deployment recipe, we now recommend **cert-only** as the simpler
 - **HPlatform / HAchievements / HStats** — Typed opaque handles returned by EOS SDK
 - **EpicAccountId** — User identity in EOS Auth subsystem
 - **ProductUserId** — User identity in EOS Connect subsystem (separate from EpicAccountId)
-- **EACMode** — ScreamAPI config flag that gates all 12 EAC-specific patches (game-handle capture, etc.)
-- **EACNoServerMode** — ScreamAPI config flag that bypasses Ecom server roundtrips
+- **EACMode** — Epic Unlocker config flag that gates all 12 EAC-specific patches (game-handle capture, etc.)
+- **EACNoServerMode** — Epic Unlocker config flag that bypasses Ecom server roundtrips
 - **Cert files** — `base.cer`, `base.bin`, `runtime.conf` — OnlineFix's universal EAC cert files, dropped into game's `EasyAntiCheat/Certificates/`
 - **Piggyback capture** — Reading data through the game's own SDK calls instead of issuing our own
 - **Dual-platform issue** — UE5 OSSv2 creating multiple HPlatform instances with different auth

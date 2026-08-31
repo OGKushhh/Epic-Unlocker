@@ -1,6 +1,6 @@
 # nEOS Technical Analysis & Cross-Tool Comparison
 
-> Analysis of nEOS v1.3.1-alpha source code, compared against EpicFix (IDA decompilation) and ScreamAPI (active project). Focus: what each tool teaches us and how ScreamAPI can benefit.
+> Analysis of nEOS v1.3.1-alpha source code, compared against EpicFix (IDA decompilation) and Epic Unlocker (active project). Focus: what each tool teaches us and how Epic Unlocker can benefit.
 
 ---
 
@@ -9,7 +9,7 @@
 nEOS is a lightweight EOS SDK emulator/proxy DLL by infogram. It has two modes:
 
 - **Emulator mode** (default): Replaces the EOS SDK entirely. Fakes all EOS responses from config. No real network calls. Good for single-player games that just check ownership.
-- **Proxy mode** (since v0.5): Loads the real EOS SDK DLL (renamed to `_o.dll`), forwards most calls to it, but intercepts ownership/entitlement queries to inject DLC unlocks. This is the mode relevant to ScreamAPI.
+- **Proxy mode** (since v0.5): Loads the real EOS SDK DLL (renamed to `_o.dll`), forwards most calls to it, but intercepts ownership/entitlement queries to inject DLC unlocks. This is the mode relevant to Epic Unlocker.
 
 nEOS is open source (Apache 2.0), ~115 unique EOS function implementations across SDK versions 1.1.0/1.2.0/1.3.0, and has been battle-tested since Control v1.04.
 
@@ -69,12 +69,12 @@ This is used in `EOS_Ecom_QueryOwnership` to allocate string buffers for **force
 
 **Side effects of capturing GameAllocMemoryFunc: essentially zero.** You're saving a function pointer the game already gave you. The only theoretical risk is calling the allocator from the wrong thread — but since you'd only call it from within EOS callbacks (which run on the game's own thread/context), this is safe. nEOS has done this for years without issues.
 
-**Side effects of NOT capturing it:** Real bugs. Here's where ScreamAPI **had** problems (now fixed):
+**Side effects of NOT capturing it:** Real bugs. Here's where Epic Unlocker **had** problems (now fixed):
 
 #### Bug 1 (FIXED): `MakeEntitlement()` used `new` — wrong allocator
 
 ```cpp
-// OLD ScreamAPI code (before fix):
+// OLD Epic Unlocker code (before fix):
 auto* e = new EOS_Ecom_Entitlement{};   // CRT heap, not game's heap
 e->EntitlementId   = id.c_str();         // DANGLING POINTER (see Bug 2)
 e->CatalogItemId   = id.c_str();         // DANGLING POINTER
@@ -92,30 +92,30 @@ e->EntitlementName = title.c_str();      // DANGLING POINTER
 #### Bug 3 (FIXED): `Ecom_Entitlement_Release` used `delete` — wrong deallocator
 
 ```cpp
-// OLD ScreamAPI code (before fix):
+// OLD Epic Unlocker code (before fix):
 delete Entitlement;       // CRT delete, wrong allocator
 ```
 
 **Fixed.** Current code frees each string buffer individually with `GameAlloc::Release()`, then frees the struct itself with `GameAlloc::Release()`. All four frees use the same allocator that was used for the corresponding allocation.
 
-### 2.4 The Fix Pattern (from nEOS) — Now Implemented in ScreamAPI
+### 2.4 The Fix Pattern (from nEOS) — Now Implemented in Epic Unlocker
 
-ScreamAPI now implements this pattern via the `GameAlloc` namespace in `eos_intercept.h`:
+Epic Unlocker now implements this pattern via the `GameAlloc` namespace in `eos_intercept.h`:
 
 1. **Capture** `AllocateMemoryFunction`, `ReleaseMemoryFunction`, `ReallocateMemoryFunction` during `EOS_Initialize` via `GameAlloc::CaptureFromOptions(Options)`
 2. **Allocate** all game-owned memory with `GameAlloc::Allocate(size, alignment)` — uses captured allocator, falls back to `_aligned_malloc` if game provided none
 3. **Free** all game-owned memory with `GameAlloc::Release(ptr)` — uses captured deallocator, falls back to `_aligned_free`
 4. **Copy strings** into allocator-owned buffers via `GameAlloc::CopyString(str)` — each string gets its own allocation
 
-**Note on allocation strategy:** Separate allocations for struct + each string (4 total) is the correct and standard pattern. The real EOS SDK itself allocates strings individually in `CopyEntitlementByIndex`. A "monolithic" single-block allocation (struct + all strings in one `Allocate` call, with `char*` fields pointing to offsets within the block) is NOT required by the SDK contract. It would only be necessary if the deallocation side was out of ScreamAPI's control — but ScreamAPI hooks both `CopyEntitlement*` (allocation) and `Entitlement_Release` (deallocation), so it controls both sides. As long as each `Allocate` has a matching `Release`, separate allocations are perfectly safe and match what the real SDK does.
+**Note on allocation strategy:** Separate allocations for struct + each string (4 total) is the correct and standard pattern. The real EOS SDK itself allocates strings individually in `CopyEntitlementByIndex`. A "monolithic" single-block allocation (struct + all strings in one `Allocate` call, with `char*` fields pointing to offsets within the block) is NOT required by the SDK contract. It would only be necessary if the deallocation side was out of Epic Unlocker's control — but Epic Unlocker hooks both `CopyEntitlement*` (allocation) and `Entitlement_Release` (deallocation), so it controls both sides. As long as each `Allocate` has a matching `Release`, separate allocations are perfectly safe and match what the real SDK does.
 
-### 2.5 What About ScreamAPI's Ownership Interception?
+### 2.5 What About Epic Unlocker's Ownership Interception?
 
-ScreamAPI's `Ecom_QueryOwnership` handler has a **different** allocator situation. It doesn't allocate new ownership data — it modifies the `EOS_Ecom_ItemOwnership` array **in-place** inside the callback from the real SDK. The real SDK allocated that array with `GameAllocMemoryFunc`, so in-place modification of `OwnershipStatus` is safe (same allocator, just flipping a field). The `g_ownership_id_storage` strings pointed to by `Id` fields are static `std::vector<std::string>` globals, so they don't dangle.
+Epic Unlocker's `Ecom_QueryOwnership` handler has a **different** allocator situation. It doesn't allocate new ownership data — it modifies the `EOS_Ecom_ItemOwnership` array **in-place** inside the callback from the real SDK. The real SDK allocated that array with `GameAllocMemoryFunc`, so in-place modification of `OwnershipStatus` is safe (same allocator, just flipping a field). The `g_ownership_id_storage` strings pointed to by `Id` fields are static `std::vector<std::string>` globals, so they don't dangle.
 
-**However**, if ScreamAPI ever needs to **inject additional ownership entries** (like nEOS's `[ForcedDLC]` feature — adding DLCs the game didn't query), it would need `GameAllocMemoryFunc` to allocate the extra `EOS_Ecom_ItemOwnership` entries and their `Id` string buffers. This is the exact scenario nEOS's `TryAllocMemory` was built for.
+**However**, if Epic Unlocker ever needs to **inject additional ownership entries** (like nEOS's `[ForcedDLC]` feature — adding DLCs the game didn't query), it would need `GameAllocMemoryFunc` to allocate the extra `EOS_Ecom_ItemOwnership` entries and their `Id` string buffers. This is the exact scenario nEOS's `TryAllocMemory` was built for.
 
-**Verdict:** Capturing `GameAllocMemoryFunc` **fixed** real bugs in ScreamAPI's entitlement path (now implemented) and enables future forced-DLC injection. The `GameAlloc` namespace in `eos_intercept.h` provides a clean abstraction with automatic CRT fallback — strictly better than nEOS's `TryAllocMemory` which requires a manual INI toggle (`ForcedDLCUseMalloc`) for the fallback path.
+**Verdict:** Capturing `GameAllocMemoryFunc` **fixed** real bugs in Epic Unlocker's entitlement path (now implemented) and enables future forced-DLC injection. The `GameAlloc` namespace in `eos_intercept.h` provides a clean abstraction with automatic CRT fallback — strictly better than nEOS's `TryAllocMemory` which requires a manual INI toggle (`ForcedDLCUseMalloc`) for the fallback path.
 
 ---
 
@@ -134,9 +134,9 @@ abc123=Season Pass      ; INJECT this into every QueryOwnership response
 def456=Premium Edition  ; Even if the game didn't ask about it
 ```
 
-This requires careful memory work (hence `TryAllocMemory`) because you're adding new entries to an array the game expects to free. ScreamAPI doesn't have this — it only responds to what the game asks.
+This requires careful memory work (hence `TryAllocMemory`) because you're adding new entries to an array the game expects to free. Epic Unlocker doesn't have this — it only responds to what the game asks.
 
-**Relevance:** Some games only query ownership of DLCs they already know about (from a local manifest). If a DLC isn't in the manifest, the game never queries it, and ScreamAPI can't unlock it. Forced injection solves this.
+**Relevance:** Some games only query ownership of DLCs they already know about (from a local manifest). If a DLC isn't in the manifest, the game never queries it, and Epic Unlocker can't unlock it. Forced injection solves this.
 
 ### 3.2 Game Identity Override
 
@@ -154,7 +154,7 @@ DeploymentId=...
 
 Combined with command-line forgery (`-epicapp=Fortnite`), this convinces the real EOS SDK (in proxy mode) that it's serving a different title. This is how nEOS handles games with strict entitlement checks — it disguises itself as a game the user actually owns.
 
-**Relevance:** ScreamAPI doesn't need this (it uses the game's real identity), but it's interesting for the "make one game's DLC work on another" use case.
+**Relevance:** Epic Unlocker doesn't need this (it uses the game's real identity), but it's interesting for the "make one game's DLC work on another" use case.
 
 ### 3.3 Synchronous Callback Fallback
 
@@ -163,9 +163,9 @@ Combined with command-line forgery (`-epicapp=Fortnite`), this convinces the rea
 UseAsyncCallbacks=false
 ```
 
-Some games crash if EOS callbacks fire asynchronously (from `EOS_Platform_Tick`). nEOS can fire all callbacks synchronously in the calling function instead. This is a game-compatibility hack that ScreamAPI doesn't have.
+Some games crash if EOS callbacks fire asynchronously (from `EOS_Platform_Tick`). nEOS can fire all callbacks synchronously in the calling function instead. This is a game-compatibility hack that Epic Unlocker doesn't have.
 
-**Relevance:** If ScreamAPI ever hits timing issues with specific games, this is a proven fallback. But ScreamAPI currently wraps callbacks (it calls the real SDK which handles timing), so this is less likely to be needed.
+**Relevance:** If Epic Unlocker ever hits timing issues with specific games, this is a proven fallback. But Epic Unlocker currently wraps callbacks (it calls the real SDK which handles timing), so this is less likely to be needed.
 
 ### 3.4 Options Struct Deep-Copying
 
@@ -183,7 +183,7 @@ if (Options) {
 }
 ```
 
-This is defensive against games that free the options struct immediately after the function returns (before the async callback fires). ScreamAPI does something similar with its `OriginalDataContainer` pattern but doesn't deep-copy the options themselves for ownership queries.
+This is defensive against games that free the options struct immediately after the function returns (before the async callback fires). Epic Unlocker does something similar with its `OriginalDataContainer` pattern but doesn't deep-copy the options themselves for ownership queries.
 
 ---
 
@@ -255,27 +255,27 @@ This is defensive against games that free the options struct immediately after t
 
 ---
 
-## 5. How Both Can Benefit ScreamAPI
+## 5. How Both Can Benefit Epic Unlocker
 
 ### 5.1 From nEOS (High Priority)
 
-| Feature | Benefit to ScreamAPI | Difficulty |
+| Feature | Benefit to Epic Unlocker | Difficulty |
 |---------|---------------------|------------|
 | **`GameAllocMemoryFunc` capture** | Fixes heap corruption bugs in `MakeEntitlement`/`Ecom_Entitlement_Release`. Enables future forced-DLC injection. | **Low** — ~20 lines of code in `eos_initialize.cpp` + `eos_intercept.cpp` |
-| **Forced DLC injection** | Unlock DLCs the game doesn't know about (no manifest entry = no query = ScreamAPI can't touch it). | **Medium** — requires allocator fix first, then injection logic in `Ecom_QueryOwnership` callback |
+| **Forced DLC injection** | Unlock DLCs the game doesn't know about (no manifest entry = no query = Epic Unlocker can't touch it). | **Medium** — requires allocator fix first, then injection logic in `Ecom_QueryOwnership` callback |
 | **Options struct deep-copy** | Defensive against games that free `Options` immediately after calling. Prevents use-after-free in async callbacks. | **Low** — copy the struct and arrays at call time |
 | **Synchronous callback fallback** | Fix for games that crash with async EOS callbacks. | **Low** — add a config flag, skip the `NEOS_AddCallback` queue |
 | **SDK version conditional compilation** | Support games using older EOS SDK versions (1.1.0, 1.2.0) where struct layouts differ. | **Medium** — need version detection + `#ifdef` blocks |
 
 ### 5.2 From EpicFix (Medium Priority)
 
-| Feature | Benefit to ScreamAPI | Difficulty |
+| Feature | Benefit to Epic Unlocker | Difficulty |
 |---------|---------------------|------------|
-| **GraphQL catalog scanner** | Auto-discover all DLC IDs for a namespace — no manual INI configuration needed. ScreamAPI already has `dlc_catalog.cpp` which does this; EpicFix's approach validates the technique. | **Already partially done** — `dlc_catalog.cpp` fetches from ScreamDB. Could add direct Epic GraphQL as a fallback source. |
+| **GraphQL catalog scanner** | Auto-discover all DLC IDs for a namespace — no manual INI configuration needed. Epic Unlocker already has `dlc_catalog.cpp` which does this; EpicFix's approach validates the technique. | **Already partially done** — `dlc_catalog.cpp` fetches from ScreamDB. Could add direct Epic GraphQL as a fallback source. |
 | **OAuth Device Auth flow** | Obtain real Epic auth token independently of the game's auth flow. Useful for authenticated API access (rarity DB, real ownership checks). | **Medium** — standard RFC 8628 implementation, but requires UI (browser popup) |
 | **Steam presence bridging** | Show EOS game status on Steam profile. Niche feature for dual-platform users. | **Low** (if Steam is available) but **Low priority** |
-| **Path integrity check** | Verify ScreamAPI is running in the correct game directory, prevent misconfiguration. | **Low** — djb2 variant, few lines of code |
-| **Custom 32-byte aligned allocator** | SIMD-friendly allocations for ScreamAPI's own internal use. | **Very Low** but **Very Low priority** — ScreamAPI doesn't do SIMD work |
+| **Path integrity check** | Verify Epic Unlocker is running in the correct game directory, prevent misconfiguration. | **Low** — djb2 variant, few lines of code |
+| **Custom 32-byte aligned allocator** | SIMD-friendly allocations for Epic Unlocker's own internal use. | **Very Low** but **Very Low priority** — Epic Unlocker doesn't do SIMD work |
 
 ### 5.3 Priority Roadmap
 
@@ -309,7 +309,7 @@ Long-term (nice-to-have):
 
 ## 6. Summary Table
 
-| Capability | nEOS | EpicFix | ScreamAPI (current) | Should ScreamAPI adopt? |
+| Capability | nEOS | EpicFix | Epic Unlocker (current) | Should Epic Unlocker adopt? |
 |-----------|------|---------|-------------------|----------------------|
 | Game allocator capture | Yes | Unknown (obfuscated) | **Yes** (`GameAlloc` namespace) | **Done** — fixed bugs |
 | Correct entitlement alloc/free | Partial (uses `delete`) | Unknown | **Yes** (`GameAlloc::Allocate`/`Release`) | **Done** — fixed bugs |
@@ -328,14 +328,14 @@ Long-term (nice-to-have):
 
 ## 7. nEOS Code Validity vs EOS SDK v1.18
 
-> nEOS targets EOS SDK ~1.3.0 (circa 2019-2020). ScreamAPI targets v1.18 (2024). Is nEOS's 6-year-old code still correct?
+> nEOS targets EOS SDK ~1.3.0 (circa 2019-2020). Epic Unlocker targets v1.18 (2024). Is nEOS's 6-year-old code still correct?
 
 ### 7.1 Allocator Typedefs — Identical
 
-Both old (nEOS) and new (ScreamAPI v1.18) headers define the exact same function signatures:
+Both old (nEOS) and new (Epic Unlocker v1.18) headers define the exact same function signatures:
 
 ```c
-// nEOS (EOS SDK ~1.3.0) AND ScreamAPI (EOS SDK v1.18) — identical
+// nEOS (EOS SDK ~1.3.0) AND Epic Unlocker (EOS SDK v1.18) — identical
 typedef void* (EOS_MEMORY_CALL *EOS_AllocateMemoryFunc)(size_t SizeInBytes, size_t Alignment);
 typedef void* (EOS_MEMORY_CALL *EOS_ReallocateMemoryFunc)(void* Pointer, size_t SizeInBytes, size_t Alignment);
 typedef void  (EOS_MEMORY_CALL *EOS_ReleaseMemoryFunc)(void* Pointer);
@@ -345,7 +345,7 @@ typedef void  (EOS_MEMORY_CALL *EOS_ReleaseMemoryFunc)(void* Pointer);
 
 ### 7.2 `EOS_InitializeOptions` — v3 → v4 (backwards-compatible)
 
-| Field | nEOS (v3, `EOS_INITIALIZE_API_LATEST=3`) | ScreamAPI v1.18 (v4, `EOS_INITIALIZE_API_LATEST=4`) |
+| Field | nEOS (v3, `EOS_INITIALIZE_API_LATEST=3`) | Epic Unlocker v1.18 (v4, `EOS_INITIALIZE_API_LATEST=4`) |
 |-------|---------------------------------------------|-----------------------------------------------------|
 | ApiVersion | int32_t | int32_t (same position) |
 | AllocateMemoryFunction | ptr | ptr (same position) |
@@ -361,7 +361,7 @@ The v4 struct has one new field **appended at the end**. All existing field offs
 
 ### 7.3 `EOS_Ecom_Entitlement` — Field changes
 
-| Field | nEOS (~v1.3.0) | ScreamAPI v1.18 | Status |
+| Field | nEOS (~v1.3.0) | Epic Unlocker v1.18 | Status |
 |-------|----------------|-----------------|--------|
 | ApiVersion | int32_t | int32_t | Identical |
 | **Id** (was `EntitlementId`) | `EOS_Ecom_EntitlementId` | Renamed → `EntitlementName` (`EOS_Ecom_EntitlementName`) | **Semantic change** |
@@ -373,7 +373,7 @@ The v4 struct has one new field **appended at the end**. All existing field offs
 
 Both versions use `EOS_ECOM_ENTITLEMENT_API_LATEST = 2`, but the struct behind that version number is different. The first `const char*` field changed semantic meaning from entitlement instance ID to entitlement name, and the second `const char*` field (`InstanceId`) was removed entirely.
 
-**Impact on ScreamAPI:** ScreamAPI's current `MakeEntitlement` uses the v1.18 field names (`EntitlementName`, `EntitlementId`, `CatalogItemId`) — correct for v1.18. nEOS never actually populates entitlement structs (it only does ownership), so this change doesn't affect nEOS's code.
+**Impact on Epic Unlocker:** Epic Unlocker's current `MakeEntitlement` uses the v1.18 field names (`EntitlementName`, `EntitlementId`, `CatalogItemId`) — correct for v1.18. nEOS never actually populates entitlement structs (it only does ownership), so this change doesn't affect nEOS's code.
 
 ### 7.4 `EOS_Ecom_ItemOwnership` — Identical
 
@@ -393,9 +393,9 @@ nEOS's `QueryOwnership` callback sets fields on `EOS_Ecom_QueryOwnershipCallback
 
 ### 7.6 nEOS Implementation Bugs Found During Validation
 
-While the *patterns* are valid, nEOS's actual implementation has bugs that ScreamAPI has already surpassed:
+While the *patterns* are valid, nEOS's actual implementation has bugs that Epic Unlocker has already surpassed:
 
-| Bug | nEOS | ScreamAPI |
+| Bug | nEOS | Epic Unlocker |
 |-----|------|-----------|
 | `Entitlement_Release` uses `delete` instead of game deallocator | Yes — `delete Entitlement` | Fixed — uses `GameAlloc::Release` |
 | Null-allocator fallback requires manual INI toggle | Yes — `ForcedDLCUseMalloc` must be set by user | Better — automatic `_aligned_malloc`/`_aligned_free` fallback |
@@ -411,5 +411,5 @@ While the *patterns* are valid, nEOS's actual implementation has bugs that Screa
 | `EOS_Ecom_ItemOwnership` layout | Yes | Unchanged in 6 years |
 | `EOS_Ecom_QueryOwnership` callback pattern | Yes | ABI-compatible |
 | `EOS_Ecom_Entitlement` layout | No (changed) | Field renamed, field removed — but nEOS doesn't use this struct anyway |
-| nEOS's `TryAllocMemory` concept | Yes | But ScreamAPI's `GameAlloc` implementation is strictly better (auto fallback, alignment, saves all 3 function pointers) |
-| nEOS's `Entitlement_Release` implementation | No (buggy) | Uses `delete` — ScreamAPI already fixed this |
+| nEOS's `TryAllocMemory` concept | Yes | But Epic Unlocker's `GameAlloc` implementation is strictly better (auto fallback, alignment, saves all 3 function pointers) |
+| nEOS's `Entitlement_Release` implementation | No (buggy) | Uses `delete` — Epic Unlocker already fixed this |

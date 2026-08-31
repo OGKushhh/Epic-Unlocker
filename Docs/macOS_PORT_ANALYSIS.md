@@ -1,6 +1,6 @@
 # macOS Port — Full Analysis & Plan
 
-> EpicFlash (ScreamAPI + EpicGUI + Overlay) → macOS  
+> EpicFlash (Epic Unlocker + EpicGUI + Overlay) → macOS  
 > Date: 2026-08-17
 
 ---
@@ -12,7 +12,7 @@
 │                  Game Process                     │
 │                                                   │
 │  ┌──────────────┐    ┌───────────────────────┐   │
-│  │  EOS SDK     │◄───│  ScreamAPI (.dll)     │   │
+│  │  EOS SDK     │◄───│  Epic Unlocker (.dll)     │   │
 │  │  (real)      │    │  hooks via MinHook    │   │
 │  └──────────────┘    │  proxy via LinkerExp  │   │
 │                       │  pipe server ───────────────► EpicGUI (Tauri)
@@ -28,7 +28,7 @@
 | Component | Tech | Role |
 |-----------|------|------|
 | **EpicGUI** | Rust/Tauri + React | Desktop GUI, communicates via IPC |
-| **ScreamAPI** | C++ DLL | Injected into game, hooks EOS SDK, serves pipe |
+| **Epic Unlocker** | C++ DLL | Injected into game, hooks EOS SDK, serves pipe |
 | **Overlay** | C++ DX11/DX12 + ImGui | In-game overlay rendered via DirectX |
 
 ---
@@ -78,7 +78,7 @@
 |-----------|-----|
 | **Overlay** | 100% DirectX + Win32. Needs complete rewrite for Metal. |
 | **DLL export forwarding** (`LinkerExports64.h`) | Windows-only mechanism. macOS uses `DYLD_INSERT_LIBRARIES` (simpler but different). |
-| **ScreamAPI injection model** | On Windows: DLL proxy (`ScreamAPI.dll` masquerades as `EOSSDK-Win64-Shipping.dll`). On macOS: `DYLD_INSERT_LIBRARIES` for symbol interposition. Fundamentally different mechanism. |
+| **Epic Unlocker injection model** | On Windows: DLL proxy (`Epic Unlocker.dll` masquerades as `EOSSDK-Win64-Shipping.dll`). On macOS: `DYLD_INSERT_LIBRARIES` for symbol interposition. Fundamentally different mechanism. |
 
 ---
 
@@ -95,7 +95,7 @@
 | `ShellExecuteW` | `commands.rs` | `std::process::Command::new("open").arg(path).spawn()` |
 | `GetLastError` | `windows_impl.rs` | `std::io::Error::last_os_error()` / `errno` |
 
-### C++ Side (ScreamAPI + Overlay)
+### C++ Side (Epic Unlocker + Overlay)
 
 | Win32 API | File | macOS Replacement |
 |-----------|------|-------------------|
@@ -178,8 +178,8 @@ This is the most fundamental architectural difference.
 ### Windows (current)
 ```
 Game.exe loads EOSSDK-Win64-Shipping.dll
-        ↓ (but finds ScreamAPI.dll renamed to that name)
-ScreamAPI.dll loads via DllMain
+        ↓ (but finds Epic Unlocker.dll renamed to that name)
+Epic Unlocker.dll loads via DllMain
         ↓
 Links to real EOSSDK-Win64-Shipping_o.dll via LinkerExports forwarding
         ↓
@@ -194,7 +194,7 @@ EpicGUI.exe connects to named pipe
 ```
 Game.app launches
         ↓
-DYLD_INSERT_LIBRARIES=libScreamAPI.dylib injected into process
+DYLD_INSERT_LIBRARIES=libEpic Unlocker.dylib injected into process
         ↓
 __attribute__((constructor)) runs on dylib load
         ↓
@@ -254,12 +254,12 @@ The overlay is **100% Windows-only** — DirectX 11/12 rendering, Win32 window m
 | 1.10 | Test `npm run tauri dev` on macOS | 1 day |
 | **Total** | | **~4–5 days** |
 
-### Phase 2: ScreamAPI macOS Port (without Overlay)
-**Goal:** ScreamAPI as `.dylib`, injectable via `DYLD_INSERT_LIBRARIES`, communicates with EpicGUI over Unix socket
+### Phase 2: Epic Unlocker macOS Port (without Overlay)
+**Goal:** Epic Unlocker as `.dylib`, injectable via `DYLD_INSERT_LIBRARIES`, communicates with EpicGUI over Unix socket
 
 | Step | Task | Effort |
 |------|------|--------|
-| 2.1 | Create `CMakeLists.txt` build system for ScreamAPI on macOS | 1 day |
+| 2.1 | Create `CMakeLists.txt` build system for Epic Unlocker on macOS | 1 day |
 | 2.2 | Rewrite `PipeServer.cpp` for Unix domain socket (server side) | 2 days |
 | 2.3 | Rewrite `dllmain.cpp` → `__attribute__((constructor))` / `__attribute__((destructor))` | 4 hours |
 | 2.4 | Replace `HMODULE`/`LoadLibrary`/`FreeLibrary` → `void*`/`dlopen`/`dlclose` in `ScreamAPI.h/cpp` | 1 day |
@@ -281,7 +281,7 @@ The overlay is **100% Windows-only** — DirectX 11/12 rendering, Win32 window m
 | Step | Task | Effort |
 |------|------|--------|
 | 3.1 | Create `build.sh` (equivalent of `build.bat`) | 4 hours |
-| 3.2 | Create `Makefile` or CMake target for ScreamAPI dylib | 4 hours |
+| 3.2 | Create `Makefile` or CMake target for Epic Unlocker dylib | 4 hours |
 | 3.3 | Apple Developer certificate + code signing | 1 day |
 | 3.4 | Notarization workflow (`notarytool submit`) | 1 day |
 | 3.5 | DMG packaging via Tauri bundler | 4 hours |
@@ -307,7 +307,7 @@ The overlay is **100% Windows-only** — DirectX 11/12 rendering, Win32 window m
 | Phase | Scope | Time | Risk |
 |-------|-------|------|------|
 | **Phase 1** | EpicGUI macOS port | 4–5 days | Low — well-structured cfg gates already exist |
-| **Phase 2** | ScreamAPI dylib port | 8–10 days | Medium — fishhook migration + DYLD_INSERT_LIBRARIES testing |
+| **Phase 2** | Epic Unlocker dylib port | 8–10 days | Medium — fishhook migration + DYLD_INSERT_LIBRARIES testing |
 | **Phase 3** | Build & distribution | 3 days | Low — standard macOS tooling |
 | **Phase 4** | Overlay (optional) | Weeks+ | High — Metal rewrite is essentially a new project |
 | **Total (v1, no overlay)** | | **~15–18 days** | |
@@ -344,7 +344,7 @@ touch src-tauri/src/macos_impl.rs
 # ... implement PipeClient using tokio::net::UnixStream
 
 # 4. Test end-to-end
-# Start ScreamAPI-injected game on macOS
+# Start Epic Unlocker-injected game on macOS
 # Start EpicGUI
 # Watch for Unix socket connection
 ```
@@ -363,7 +363,7 @@ touch src-tauri/src/macos_impl.rs
 - [ ] `src-tauri/src/manifest.rs` — Add macOS `manifest_dirs()` implementation
 - [ ] `src-tauri/tauri.conf.json` — Add macOS bundle targets and icons
 
-### ScreamAPI (C++) — Must Change
+### Epic Unlocker (C++) — Must Change
 
 - [ ] `CMakeLists.txt` — **NEW** — macOS build system
 - [ ] `src/PipeServer.cpp` — Rewrite for Unix domain socket
