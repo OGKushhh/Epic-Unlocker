@@ -63,8 +63,8 @@ export default function App() {
     toggleConsent,
   } = useManifestSync({ locale, showToast });
 
-  // Show consent modal when not dismissed (on decline: re-shows every launch)
-  const showConsentGate = !consentState.dismissed;
+  // Consent gate disabled — never show the modal
+  const showConsentGate = false;
 
   // Localized stat-gated tooltip content
   const STAT_GATED_TITLE = t("tooltip.statGatedTitle", locale);

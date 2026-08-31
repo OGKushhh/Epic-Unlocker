@@ -979,13 +979,11 @@ pub async fn upload_manifests(
     }
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    // Check consent before uploading
-    let consent_state = crate::manifest::get_consent_state(&app)?;
-    println!("📋 Consent state: consent={}, dismissed={}", consent_state.consent, consent_state.dismissed);
-    if !consent_state.consent {
-        println!("❌ Consent not granted – returning error");
-        return Err("Manifest upload consent not granted".to_string());
-    }
+    // Consent gate disabled — always allow uploads
+    // let consent_state = crate::manifest::get_consent_state(&app)?;
+    // if !consent_state.consent {
+    //     return Err("Manifest upload consent not granted".to_string());
+    // }
 
     let results = crate::manifest::upload_manifests_to_api(&app, &files).await?;
     println!("📋 upload_manifests COMMAND returning {} results", results.len());
