@@ -61,7 +61,7 @@ Epic Unlocker is a **DLL injection tool** that hooks the Epic Online Services (E
 | 🕹️ **Universal** | Works with any EOS‑powered game (e.g., *TMNT: Splintered Fate*, *Dying Light*, *Northgard*). |
 | ⌨️ **Global Hotkeys** | `Ctrl+Shift+U` → unlock all. `Ctrl+Shift+L` → unlock list from `unlock_list.txt`. |
 | 🖥️ **Overlay** | Beautiful ImGui window with stats, search/filter, and per‑achievement unlock buttons (press `Shift+F5`). |
-| 🪟 **External GUI** | Standalone dark-themed GUI app — connect to any running game and unlock achievements without an overlay. Double-click any achievement to unlock instantly. |
+| 🌉 **External GUI** | Standalone dark-themed GUI app — connect to any running game and unlock achievements without an overlay. Double-click any achievement to unlock instantly. |
 | 📁 **File‑based unlock** | Drop a text file with achievement IDs – press hotkey to unlock only those. |
 | 📊 **Auto‑logging** | Achievement statistics are written to `ScreamAPI.log` every time player data loads. |
 | ⚙️ **Configurable** | Toggle overlay, DX12 hook, logging, forced achievement queries, custom EOS SDK path, etc. |
