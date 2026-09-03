@@ -10,9 +10,12 @@
 #include "PipeServer.h"
 #include "eos-sdk/eos_init.h"
 #include "eos-sdk/eos_types.h"
+#include "MinHook.h"
 #include <vector>
 #include <filesystem>
 #include <string>
+#include <atomic>
+#include <condition_variable>
 
 namespace fs = std::filesystem;
 
@@ -45,6 +48,118 @@ static HMODULE FindEOSSDKRecursive(const fs::path& root, const std::wstring& dll
     }
     return nullptr;
 }
+
+// == WaitForEOSLoad: lazy EOS SDK discovery ==
+// Inspired by AchUnlocker (unknowncheats). When ScreamAPI starts in hook
+// mode and cannot find the SDK at startup (Koaloader injection on a UE5.4+
+// game that loads EOSSDK lazily), this module installs a LoadLibraryExW
+// hook and waits for the game to load the SDK. When it loads, we initialize
+// EOS_Compat detection and MinHook-based hooks against the freshly-loaded
+// module. Bounded to a 30-second timeout so we do not pin a thread forever
+// on games that never use EOS.
+namespace WaitForEOSLoad {
+    static std::atomic<HMODULE> g_pendingModule{nullptr};
+    static std::atomic<bool> g_armed{false};
+    static std::atomic<bool> g_fired{false};
+    static HMODULE (WINAPI *g_origLoadLibraryExW)(LPCWSTR, HANDLE, DWORD) = nullptr;
+
+    static HMODULE WINAPI HookedLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+        HMODULE hLib = g_origLoadLibraryExW(lpLibFileName, hFile, dwFlags);
+        if (hLib && lpLibFileName && !g_fired.load(std::memory_order_relaxed)) {
+            LPCWSTR name = wcsrchr(lpLibFileName, L'\\');
+            name = name ? name + 1 : lpLibFileName;
+            if (_wcsicmp(name, L"EOSSDK-Win64-Shipping.dll") == 0 ||
+                _wcsicmp(name, L"EOSSDK-Win32-Shipping.dll") == 0) {
+                g_pendingModule.store(hLib, std::memory_order_release);
+                Logger::info("[WAIT] LoadLibraryExW hook: game loaded %ls (handle=%p)", name, hLib);
+            }
+        }
+        return hLib;
+    }
+
+    static void InstallLoadLibraryHook() {
+        if (g_armed.exchange(true)) return;
+        HMODULE hk32 = GetModuleHandleW(L"kernelbase.dll");
+        if (!hk32) hk32 = GetModuleHandleW(L"kernel32.dll");
+        if (!hk32) {
+            Logger::error("[WAIT] Cannot find kernelbase/kernel32 to hook LoadLibraryExW");
+            return;
+        }
+        void* target = GetProcAddress(hk32, "LoadLibraryExW");
+        if (!target) {
+            Logger::error("[WAIT] LoadLibraryExW not found in kernel module");
+            return;
+        }
+        // Initialize MinHook early. EOS_Hooks::InitializeHooks() later
+        // tolerates MH_ERROR_ALREADY_INITIALIZED, so this is safe.
+        MH_STATUS mi = MH_Initialize();
+        if (mi != MH_OK && mi != MH_ERROR_ALREADY_INITIALIZED) {
+            Logger::error("[WAIT] MH_Initialize failed: %d", mi);
+            return;
+        }
+        MH_STATUS s = MH_CreateHook(target, (void*)&HookedLoadLibraryExW, (void**)&g_origLoadLibraryExW);
+        if (s != MH_OK) {
+            Logger::error("[WAIT] MH_CreateHook(LoadLibraryExW) failed: %d", s);
+            return;
+        }
+        s = MH_EnableHook(target);
+        if (s != MH_OK) {
+            Logger::error("[WAIT] MH_EnableHook(LoadLibraryExW) failed: %d", s);
+            return;
+        }
+        Logger::info("[WAIT] LoadLibraryExW hook installed -- waiting for game to load EOSSDK");
+    }
+
+    // Spawns a detached polling thread. Returns when SDK loads or timeout.
+    static void StartPollingAndInit() {
+        InstallLoadLibraryHook();
+        std::thread([]() {
+            constexpr int POLL_MS = 250;
+            constexpr int TIMEOUT_MS = 30000;
+            int elapsed = 0;
+            while (elapsed < TIMEOUT_MS) {
+                HMODULE m = g_pendingModule.load(std::memory_order_acquire);
+                if (!m) {
+                    // Double-check via GetModuleHandle in case our hook missed
+                    // a load that happened before installation.
+                    m = GetModuleHandleW(L"EOSSDK-Win64-Shipping.dll");
+                    if (!m) m = GetModuleHandleW(L"EOSSDK-Win32-Shipping.dll");
+                    if (m) g_pendingModule.store(m, std::memory_order_release);
+                }
+                if (m) {
+                    if (!g_fired.exchange(true)) {
+                        Logger::info("[WAIT] EOS SDK loaded after %d ms -- initializing hooks", elapsed);
+                        ScreamAPI::originalDLL = m;
+                        if (EOS_Compat::detectSDKVersion(m)) {
+                            EOS_Compat::logCompatibilityInfo();
+                        }
+                        // Capture achievement originals for ForceAchievementsConfiguration
+                        auto qDefs = (Intercept::Achievements_QueryDefinitions_t)
+                            EOS_Resolve::resolve(m, "EOS_Achievements_QueryDefinitions");
+                        auto qPlayer = (Intercept::Achievements_QueryPlayerAchievements_t)
+                            EOS_Resolve::resolve(m, "EOS_Achievements_QueryPlayerAchievements");
+                        auto unlock = (Intercept::Achievements_UnlockAchievements_t)
+                            EOS_Resolve::resolve(m, "EOS_Achievements_UnlockAchievements");
+                        Intercept::SetAchievementsOriginals(qDefs, qPlayer, unlock);
+                        if (EOS_Hooks::InitializeHooks(m)) {
+                            Logger::info("[WAIT] Hooks installed successfully via lazy SDK discovery");
+                        } else {
+                            Logger::error("[WAIT] InitializeHooks failed on lazy-loaded SDK");
+                        }
+                    }
+                    return;
+                }
+                Sleep(POLL_MS);
+                elapsed += POLL_MS;
+                if (elapsed % 5000 == 0) {
+                    Logger::info("[WAIT] Still waiting for EOS SDK load (%d/%d ms)", elapsed, TIMEOUT_MS);
+                }
+            }
+            Logger::error("[WAIT] Timed out after %d ms -- EOS SDK never loaded", TIMEOUT_MS);
+            Logger::warn("[WAIT] Game may not use EOS, or uses a different DLL name. Check log for clues.");
+        }).detach();
+    }
+} // namespace WaitForEOSLoad
 
 namespace ScreamAPI
 {
@@ -170,16 +285,37 @@ namespace ScreamAPI
             // -----------------------------------------------------------------
             // 1. Try to get the already-loaded module (injection method)
             // -----------------------------------------------------------------
+            // When WaitForEOSLoad=true, do a single quick check (we have a
+            // 30-second polling fallback inside StartPollingAndInit).
+            // When WaitForEOSLoad=false, keep the existing 10s poll.
+            // -----------------------------------------------------------------
+            const bool waitMode = Config::WaitForEOSLoad();
             HMODULE original = nullptr;
-            for (int i = 0; i < 100; ++i) {
+            if (waitMode) {
                 original = GetModuleHandle(origDllW.c_str());
                 if (original) {
-                    Logger::debug("Got handle to already-loaded EOS SDK after %d ms", i * 100);
-                    break;
+                    Logger::info("Got handle to already-loaded EOS SDK (WaitForEOSLoad quick check)");
                 }
-                Sleep(100);
+            } else {
+                for (int i = 0; i < 100; ++i) {
+                    original = GetModuleHandle(origDllW.c_str());
+                    if (original) {
+                        Logger::debug("Got handle to already-loaded EOS SDK after %d ms", i * 100);
+                        break;
+                    }
+                    Sleep(100);
+                }
             }
 
+            // -----------------------------------------------------------------
+            // When WaitForEOSLoad=true, skip the aggressive LoadLibrary paths
+            // (current dir, recursive search, custom path, hardcoded subfolders).
+            // We want to wait for the GAME to load the SDK, not load it ourselves
+            // -- otherwise the SDK is mapped before the game loader has set
+            // up its internal state, which can prevent the fallback handle
+            // capture from working correctly on UE5.4+ OSSv2 games.
+            // -----------------------------------------------------------------
+            if (!waitMode) {
             // -----------------------------------------------------------------
             // 2. Try to load from current directory
             // -----------------------------------------------------------------
@@ -238,6 +374,7 @@ namespace ScreamAPI
                     }
                 }
             }
+            } // end if (!waitMode)
 
             if (original) {
                 originalDLL = original;
@@ -256,8 +393,15 @@ namespace ScreamAPI
                     Logger::error("Failed to initialize MinHook hooking system!");
                 }
             } else {
-                Logger::error("Failed to locate original EOS SDK: %s", SCREAM_API_ORIG_DLL);
-                Logger::error("Make sure the game has loaded the EOS SDK (or use proxy method)");
+                if (Config::WaitForEOSLoad()) {
+                    Logger::info("WaitForEOSLoad=true -- installing LoadLibraryExW hook and waiting up to 30s");
+                    Logger::info("(typical of UE5.4+ games with Koaloader that load the SDK lazily)");
+                    WaitForEOSLoad::StartPollingAndInit();
+                } else {
+                    Logger::error("Failed to locate original EOS SDK: %s", SCREAM_API_ORIG_DLL);
+                    Logger::error("Make sure the game has loaded the EOS SDK (or use proxy method)");
+                    Logger::warn("Tip: set WaitForEOSLoad=True in [ScreamAPI] if this game loads the SDK after init (e.g. UE5.4+ with Koaloader)");
+                }
             }
         }
 

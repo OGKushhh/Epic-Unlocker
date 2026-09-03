@@ -58,4 +58,13 @@ std::string NamespaceId();
 // Custom EOS SDK path
 std::string GetCustomEOSPath();
 
+// WaitForEOSLoad: opt-in lazy EOS SDK discovery.
+// When true and ScreamAPI can't find the EOS SDK at startup (typical of
+// hook mode with Koaloader on UE5.4+ games that load the SDK lazily),
+// ScreamAPI installs a LoadLibraryExW hook and waits up to 30 seconds
+// for the game to load EOSSDK-Win64-Shipping.dll, then initializes hooks
+// against that module.
+// Default: false -- only enable on games known to load the SDK after init.
+bool WaitForEOSLoad();
+
 };

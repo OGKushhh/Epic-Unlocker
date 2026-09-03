@@ -146,7 +146,8 @@ EnableOverlay                 = True      ; Show achievement overlay
 ForceAchievementsConfig       = False     ; Force achievement definitions query before unlock
 EnableKeyboardNavigation      = True      ; Allow keyboard navigation in overlay (arrows, Tab, Enter, Esc)
 EnableDX12Hook                = False     ; Hook DX12 games (DX11 is always tried first)
-BlockMetrics                  = True     ; Block Epic telemetry/metrics (if supported)
+BlockMetrics                  = True      ; Block Epic telemetry/metrics (if supported)
+WaitForEOSLoad                = False     ; wait for the game to load the EOS SDK itself instead of loading it from disk (Koaloader + UE5.4+ games)
 ; Optional custom paths / overrides
 CustomEOSPath                 =           ; Absolute path to EOSSDK-Win64-Shipping.dll (optional)
 NamespaceId                   =           ; Override the game's namespace ID (rarely needed)

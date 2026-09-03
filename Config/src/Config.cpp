@@ -45,6 +45,8 @@ std::vector<std::string> vDLC_List;
 std::string sCustomEOSPath = "";
 // Namespace
 std::string sNamespaceId = "";
+// WaitForEOSLoad (lazy SDK discovery)
+bool bWaitForEOSLoad = false;
 
 // Per-item DLC override (from [DLC_Override])
 enum class DlcOverrideStatus { UNLOCKED, LOCKED, ORIGINAL };
@@ -78,6 +80,7 @@ std::map<std::string, std::map<std::string, void*>> configMap = {
         {"BlockMetrics",              &bBlockMetrics},
         {"CustomEOSPath",             &sCustomEOSPath},
         {"NamespaceId",               &sNamespaceId},
+        {"WaitForEOSLoad",            &bWaitForEOSLoad},
     }},
     {"Logging", {
         {"LogLevel",              &sLogLevel},
@@ -213,6 +216,7 @@ bool EACNoServerMode()            { return bEACNoServerMode; }
 std::vector<std::string> DLC_List() { return vDLC_List; }
 std::string GetCustomEOSPath()    { return sCustomEOSPath; }
 std::string NamespaceId()         { return sNamespaceId; }
+bool WaitForEOSLoad()             { return bWaitForEOSLoad; }
 
 std::map<std::string, std::string> ExtraEntitlements(){
     return mExtraEntitlements;
