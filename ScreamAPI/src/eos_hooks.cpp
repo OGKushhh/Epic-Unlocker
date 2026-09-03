@@ -24,59 +24,65 @@ namespace EOS_Hooks {
 static bool hooksInitialized = false;
 static HMODULE originalEOSDLL = nullptr;
 
-// Original function pointers (filled by MinHook)
+// ====================================================================
+// Phase B #1: EOS_HOOK_TABLE -- single source of truth for intercepted
+// functions. Add a row here, the declaration AND the install call are
+// both generated automatically. No more three-place edits.
+//
+// Columns:
+//   EosName     - the EOS_ symbol name (passed to GetProcAddress)
+//   OurName     - the local name (Original::OurName, Hooks::OurName)
+//   Variant     - MANDATORY or OPTIONAL
+//   Category    - logical group (for logging during install)
+// ====================================================================
+#define EOS_HOOK_TABLE(X) \
+    /* Category: Platform */ \
+    X(EOS_Platform_Create,                        Platform_Create,                        MANDATORY, Platform) \
+    X(EOS_Platform_Release,                       Platform_Release,                       MANDATORY, Platform) \
+    X(EOS_Platform_Tick,                          Platform_Tick,                          MANDATORY, Platform) \
+    X(EOS_Platform_GetConnectInterface,           Platform_GetConnectInterface,           MANDATORY, Platform) \
+    X(EOS_Platform_GetAuthInterface,              Platform_GetAuthInterface,              MANDATORY, Platform) \
+    X(EOS_Platform_GetAchievementsInterface,      Platform_GetAchievementsInterface,      MANDATORY, Platform) \
+    X(EOS_Platform_GetEcomInterface,              Platform_GetEcomInterface,              MANDATORY, Platform) \
+    X(EOS_Platform_GetStatsInterface,             Platform_GetStatsInterface,             MANDATORY, Platform) \
+    X(EOS_Platform_GetUIInterface,                Platform_GetUIInterface,                OPTIONAL,  Platform) \
+    /* Category: Achievements */ \
+    X(EOS_Achievements_QueryDefinitions,          Achievements_QueryDefinitions,           MANDATORY, Achievements) \
+    X(EOS_Achievements_QueryPlayerAchievements,   Achievements_QueryPlayerAchievements,   MANDATORY, Achievements) \
+    X(EOS_Achievements_UnlockAchievements,        Achievements_UnlockAchievements,        MANDATORY, Achievements) \
+    X(EOS_Achievements_AddNotifyAchievementsUnlockedV2, Achievements_AddNotifyAchievementsUnlockedV2, OPTIONAL, Achievements) \
+    X(EOS_Achievements_AddNotifyAchievementsUnlocked,  Achievements_AddNotifyAchievementsUnlocked,  OPTIONAL, Achievements) \
+    /* Category: Ecom */ \
+    X(EOS_Ecom_QueryOwnership,                    Ecom_QueryOwnership,                    MANDATORY, Ecom) \
+    X(EOS_Ecom_QueryOwnershipBySandboxIds,        Ecom_QueryOwnershipBySandboxIds,       OPTIONAL,  Ecom) \
+    X(EOS_Ecom_QueryOwnershipToken,               Ecom_QueryOwnershipToken,               OPTIONAL,  Ecom) \
+    X(EOS_Ecom_QueryEntitlements,                 Ecom_QueryEntitlements,                 MANDATORY, Ecom) \
+    X(EOS_Ecom_GetEntitlementsCount,              Ecom_GetEntitlementsCount,              MANDATORY, Ecom) \
+    X(EOS_Ecom_CopyEntitlementByIndex,            Ecom_CopyEntitlementByIndex,             MANDATORY, Ecom) \
+    X(EOS_Ecom_Entitlement_Release,               Ecom_Entitlement_Release,               MANDATORY, Ecom) \
+    /* Category: Connect */ \
+    X(EOS_Connect_Login,                          Connect_Login,                          MANDATORY, Connect) \
+    X(EOS_Connect_GetLoggedInUserByIndex,         Connect_GetLoggedInUserByIndex,         MANDATORY, Connect) \
+    X(EOS_Connect_AddNotifyLoginStatusChanged,    Connect_AddNotifyLoginStatusChanged,    OPTIONAL,  Connect) \
+    /* Category: Auth */ \
+    X(EOS_Auth_Login,                             Auth_Login,                             MANDATORY, Auth) \
+    X(EOS_Auth_GetLoggedInAccountByIndex,         Auth_GetLoggedInAccountByIndex,         MANDATORY, Auth) \
+    X(EOS_Auth_AddNotifyLoginStatusChanged,       Auth_AddNotifyLoginStatusChanged,       OPTIONAL,  Auth) \
+    /* Category: Metrics */ \
+    X(EOS_Metrics_BeginPlayerSession,              Metrics_BeginPlayerSession,            OPTIONAL,  Metrics) \
+    X(EOS_Metrics_EndPlayerSession,                Metrics_EndPlayerSession,              OPTIONAL,  Metrics) \
+    /* Logging: not hooked, just resolved via GetProcAddress so we can call
+       them from inside the proxy DLL without tripping the linker forwarder. */ \
+    X(EOS_Logging_SetCallback,                    Logging_SetCallback,                    RESOLVE_ONLY, Logging) \
+    X(EOS_Logging_SetLogLevel,                    Logging_SetLogLevel,                    RESOLVE_ONLY, Logging)
+
+// Original function pointers (filled by MinHook). Generated from EOS_HOOK_TABLE.
 namespace Original {
-    // Platform
-    decltype(&EOS_Platform_Create) Platform_Create = nullptr;
-    decltype(&EOS_Platform_Release) Platform_Release = nullptr;
-    decltype(&EOS_Platform_Tick) Platform_Tick = nullptr;
-    decltype(&EOS_Platform_GetConnectInterface) Platform_GetConnectInterface = nullptr;
-    decltype(&EOS_Platform_GetAuthInterface) Platform_GetAuthInterface = nullptr;
-    decltype(&EOS_Platform_GetAchievementsInterface) Platform_GetAchievementsInterface = nullptr;
-    decltype(&EOS_Platform_GetEcomInterface) Platform_GetEcomInterface = nullptr;
-    // Stats interface (for stat-gated achievement unlocking)
-    decltype(&EOS_Platform_GetStatsInterface) Platform_GetStatsInterface = nullptr;
-    // Optional
-    decltype(&EOS_Platform_GetUIInterface) Platform_GetUIInterface = nullptr;
-
-    // Achievements
-    decltype(&EOS_Achievements_QueryDefinitions) Achievements_QueryDefinitions = nullptr;
-    decltype(&EOS_Achievements_QueryPlayerAchievements) Achievements_QueryPlayerAchievements = nullptr;
-    decltype(&EOS_Achievements_UnlockAchievements) Achievements_UnlockAchievements = nullptr;
-    decltype(&EOS_Achievements_AddNotifyAchievementsUnlockedV2) Achievements_AddNotifyAchievementsUnlockedV2 = nullptr;
-    // Deprecated version
-    decltype(&EOS_Achievements_AddNotifyAchievementsUnlocked) Achievements_AddNotifyAchievementsUnlocked = nullptr;
-
-    // Ecom
-    decltype(&EOS_Ecom_QueryOwnership) Ecom_QueryOwnership = nullptr;
-    decltype(&EOS_Ecom_QueryOwnershipBySandboxIds) Ecom_QueryOwnershipBySandboxIds = nullptr;
-    decltype(&EOS_Ecom_QueryOwnershipToken) Ecom_QueryOwnershipToken = nullptr;
-    decltype(&EOS_Ecom_QueryEntitlements) Ecom_QueryEntitlements = nullptr;
-    decltype(&EOS_Ecom_GetEntitlementsCount) Ecom_GetEntitlementsCount = nullptr;
-    decltype(&EOS_Ecom_CopyEntitlementByIndex) Ecom_CopyEntitlementByIndex = nullptr;
-    decltype(&EOS_Ecom_Entitlement_Release) Ecom_Entitlement_Release = nullptr;
-
-    // Connect
-    decltype(&EOS_Connect_Login) Connect_Login = nullptr;
-    decltype(&EOS_Connect_GetLoggedInUserByIndex) Connect_GetLoggedInUserByIndex = nullptr;
-    // Optional
-    decltype(&EOS_Connect_AddNotifyLoginStatusChanged) Connect_AddNotifyLoginStatusChanged = nullptr;
-
-    // Auth
-    decltype(&EOS_Auth_Login) Auth_Login = nullptr;
-    decltype(&EOS_Auth_GetLoggedInAccountByIndex) Auth_GetLoggedInAccountByIndex = nullptr;
-    // Optional
-    decltype(&EOS_Auth_AddNotifyLoginStatusChanged) Auth_AddNotifyLoginStatusChanged = nullptr;
-
-    // Metrics (E1: BlockMetrics config knob)
-    decltype(&EOS_Metrics_BeginPlayerSession) Metrics_BeginPlayerSession = nullptr;
-    decltype(&EOS_Metrics_EndPlayerSession) Metrics_EndPlayerSession = nullptr;
-
-    // Logging (A1: not hooked, just resolved via GetProcAddress so we can
-    // call EOS_Logging_SetCallback from inside the proxy DLL without
-    // tripping the linker forwarder)
-    decltype(&EOS_Logging_SetCallback) Logging_SetCallback = nullptr;
-    decltype(&EOS_Logging_SetLogLevel) Logging_SetLogLevel = nullptr;
+    // X-macro expansion: one decltype decl per row.
+    #define X_DECL(EosName, OurName, Variant, Category) \
+        decltype(&EosName) OurName = nullptr;
+    EOS_HOOK_TABLE(X_DECL)
+    #undef X_DECL
 }
 
 // Resolve an EOS SDK export by name. Returns the function pointer, or
@@ -148,29 +154,26 @@ void EOS_CALL Platform_Tick(EOS_HPlatform Handle) {
     Intercept::Platform_Tick(Original::Platform_Tick, Handle);
 }
 
-EOS_HConnect EOS_CALL Platform_GetConnectInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetConnectInterface(Original::Platform_GetConnectInterface, Handle);
-}
+// ====================================================================
+// Phase B #8: PLATFORM_INTERFACE_HOOK macro
+// All 6 EOS_Platform_Get*Interface hooks have the same signature shape:
+//   RetType EOS_CALL Platform_GetXxxInterface(EOS_HPlatform Handle)
+//   { return Intercept::Platform_GetXxxInterface(Original::..., Handle); }
+// One macro, six invocations. No more copy-paste drift.
+// ====================================================================
+#define PLATFORM_INTERFACE_HOOK(OurName, RetType) \
+    RetType EOS_CALL OurName(EOS_HPlatform Handle) { \
+        return Intercept::OurName(Original::OurName, Handle); \
+    }
 
-EOS_HAuth EOS_CALL Platform_GetAuthInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetAuthInterface(Original::Platform_GetAuthInterface, Handle);
-}
+PLATFORM_INTERFACE_HOOK(Platform_GetConnectInterface,      EOS_HConnect)
+PLATFORM_INTERFACE_HOOK(Platform_GetAuthInterface,         EOS_HAuth)
+PLATFORM_INTERFACE_HOOK(Platform_GetAchievementsInterface, EOS_HAchievements)
+PLATFORM_INTERFACE_HOOK(Platform_GetEcomInterface,         EOS_HEcom)
+PLATFORM_INTERFACE_HOOK(Platform_GetStatsInterface,        EOS_HStats)
+PLATFORM_INTERFACE_HOOK(Platform_GetUIInterface,           EOS_HUI)
 
-EOS_HAchievements EOS_CALL Platform_GetAchievementsInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetAchievementsInterface(Original::Platform_GetAchievementsInterface, Handle);
-}
-
-EOS_HEcom EOS_CALL Platform_GetEcomInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetEcomInterface(Original::Platform_GetEcomInterface, Handle);
-}
-
-EOS_HStats EOS_CALL Platform_GetStatsInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetStatsInterface(Original::Platform_GetStatsInterface, Handle);
-}
-
-EOS_HUI EOS_CALL Platform_GetUIInterface(EOS_HPlatform Handle) {
-    return Intercept::Platform_GetUIInterface(Original::Platform_GetUIInterface, Handle);
-}
+#undef PLATFORM_INTERFACE_HOOK
 
 // Achievements hooks
 void EOS_CALL Achievements_QueryDefinitions(EOS_HAchievements Handle, const EOS_Achievements_QueryDefinitionsOptions* Options, void* ClientData, const EOS_Achievements_OnQueryDefinitionsCompleteCallback CompletionDelegate) {
@@ -288,69 +291,44 @@ bool InitializeHooks(HMODULE originalDLL) {
     }
     Logger::info("[HOOK] MinHook initialized successfully");
 
-    Logger::info("[HOOK] Installing Platform hooks...");
-    INSTALL_HOOK(originalDLL, EOS_Platform_Create, Hooks::Platform_Create, Original::Platform_Create);
-    INSTALL_HOOK(originalDLL, EOS_Platform_Release, Hooks::Platform_Release, Original::Platform_Release);
-    INSTALL_HOOK(originalDLL, EOS_Platform_Tick, Hooks::Platform_Tick, Original::Platform_Tick);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetConnectInterface, Hooks::Platform_GetConnectInterface, Original::Platform_GetConnectInterface);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetAuthInterface, Hooks::Platform_GetAuthInterface, Original::Platform_GetAuthInterface);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetAchievementsInterface, Hooks::Platform_GetAchievementsInterface, Original::Platform_GetAchievementsInterface);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetEcomInterface, Hooks::Platform_GetEcomInterface, Original::Platform_GetEcomInterface);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetStatsInterface, Hooks::Platform_GetStatsInterface, Original::Platform_GetStatsInterface);
-    INSTALL_HOOK(originalDLL, EOS_Platform_GetUIInterface, Hooks::Platform_GetUIInterface, Original::Platform_GetUIInterface);
-
-    Logger::info("[HOOK] Installing Achievement hooks...");
+    // ====================================================================
+    // Phase B #1: Install hooks from EOS_HOOK_TABLE. The variant column
+    // selects between INSTALL_HOOK (MANDATORY), INSTALL_HOOK_OPTIONAL
+    // (OPTIONAL), and RESOLVE_ONLY (just GetProcAddress, no hook).
+    // Each row's INSTALL_* macro already logs its own "Successfully hooked"
+    // or "Function not found" line, so we don't add a duplicate log here.
+    // ====================================================================
     if (EOS_Compat::isFeatureAvailable("AchievementsUnlockedV2")) {
         Logger::info("[HOOK]   V2 achievement notifications: AVAILABLE (SDK 1.14+)");
     } else {
         Logger::warn("[HOOK]   V2 achievement notifications: NOT AVAILABLE (SDK < 1.14)");
         Logger::warn("[HOOK]   V2 hooks will be skipped (INSTALL_HOOK_OPTIONAL)");
     }
-    INSTALL_HOOK(originalDLL, EOS_Achievements_QueryDefinitions, Hooks::Achievements_QueryDefinitions, Original::Achievements_QueryDefinitions);
-    INSTALL_HOOK(originalDLL, EOS_Achievements_QueryPlayerAchievements, Hooks::Achievements_QueryPlayerAchievements, Original::Achievements_QueryPlayerAchievements);
-    INSTALL_HOOK(originalDLL, EOS_Achievements_UnlockAchievements, Hooks::Achievements_UnlockAchievements, Original::Achievements_UnlockAchievements);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlockedV2, Hooks::Achievements_AddNotifyAchievementsUnlockedV2, Original::Achievements_AddNotifyAchievementsUnlockedV2);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Achievements_AddNotifyAchievementsUnlocked, Hooks::Achievements_AddNotifyAchievementsUnlocked, Original::Achievements_AddNotifyAchievementsUnlocked);
+    Logger::info("[HOOK] BlockMetrics=%s", Config::BlockMetrics() ? "true" : "false");
 
-    Logger::info("[HOOK] Installing Ecom hooks...");
-    INSTALL_HOOK(originalDLL, EOS_Ecom_QueryOwnership, Hooks::Ecom_QueryOwnership, Original::Ecom_QueryOwnership);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Ecom_QueryOwnershipBySandboxIds, Hooks::Ecom_QueryOwnershipBySandboxIds, Original::Ecom_QueryOwnershipBySandboxIds);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Ecom_QueryOwnershipToken, Hooks::Ecom_QueryOwnershipToken, Original::Ecom_QueryOwnershipToken);
-    INSTALL_HOOK(originalDLL, EOS_Ecom_QueryEntitlements, Hooks::Ecom_QueryEntitlements, Original::Ecom_QueryEntitlements);
-    INSTALL_HOOK(originalDLL, EOS_Ecom_GetEntitlementsCount, Hooks::Ecom_GetEntitlementsCount, Original::Ecom_GetEntitlementsCount);
-    INSTALL_HOOK(originalDLL, EOS_Ecom_CopyEntitlementByIndex, Hooks::Ecom_CopyEntitlementByIndex, Original::Ecom_CopyEntitlementByIndex);
-    INSTALL_HOOK(originalDLL, EOS_Ecom_Entitlement_Release, Hooks::Ecom_Entitlement_Release, Original::Ecom_Entitlement_Release);
+    // Token-paste aliases so INSTALL_##Variant resolves correctly.
+    // INSTALL_HOOK and INSTALL_HOOK_OPTIONAL are defined above; we add
+    // INSTALL_MANDATORY / INSTALL_OPTIONAL as aliases to match the X-macro
+    // variant column names. RESOLVE_ONLY is handled inline below.
+    #define INSTALL_MANDATORY   INSTALL_HOOK
+    #define INSTALL_OPTIONAL    INSTALL_HOOK_OPTIONAL
 
-    Logger::info("[HOOK] Installing Connect hooks...");
-    INSTALL_HOOK(originalDLL, EOS_Connect_Login, Hooks::Connect_Login, Original::Connect_Login);
-    INSTALL_HOOK(originalDLL, EOS_Connect_GetLoggedInUserByIndex, Hooks::Connect_GetLoggedInUserByIndex, Original::Connect_GetLoggedInUserByIndex);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Connect_AddNotifyLoginStatusChanged, Hooks::Connect_AddNotifyLoginStatusChanged, Original::Connect_AddNotifyLoginStatusChanged);
-
-    Logger::info("[HOOK] Installing Auth hooks...");
-    INSTALL_HOOK(originalDLL, EOS_Auth_Login, Hooks::Auth_Login, Original::Auth_Login);
-    INSTALL_HOOK(originalDLL, EOS_Auth_GetLoggedInAccountByIndex, Hooks::Auth_GetLoggedInAccountByIndex, Original::Auth_GetLoggedInAccountByIndex);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Auth_AddNotifyLoginStatusChanged, Hooks::Auth_AddNotifyLoginStatusChanged, Original::Auth_AddNotifyLoginStatusChanged);
-
-    Logger::info("[HOOK] Installing Metrics hooks (BlockMetrics=%s)...",
-                 Config::BlockMetrics() ? "true" : "false");
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Metrics_BeginPlayerSession, Hooks::Metrics_BeginPlayerSession, Original::Metrics_BeginPlayerSession);
-    INSTALL_HOOK_OPTIONAL(originalDLL, EOS_Metrics_EndPlayerSession, Hooks::Metrics_EndPlayerSession, Original::Metrics_EndPlayerSession);
-
-    // A1: Resolve logging function pointers (not hooked -- we call them
-    // directly from the Platform_Create hook to register SdkLogCallback).
-    {
-        if (void* pSetCB = ResolveExport(originalDLL, "EOS_Logging_SetCallback")) {
-            Original::Logging_SetCallback = reinterpret_cast<decltype(Original::Logging_SetCallback)>(pSetCB);
-        } else {
-            Logger::warn("[HOOK] Could not resolve EOS_Logging_SetCallback (SDK log capture disabled)");
-        }
-
-        if (void* pSetLvl = ResolveExport(originalDLL, "EOS_Logging_SetLogLevel")) {
-            Original::Logging_SetLogLevel = reinterpret_cast<decltype(Original::Logging_SetLogLevel)>(pSetLvl);
-        } else {
-            Logger::warn("[HOOK] Could not resolve EOS_Logging_SetLogLevel (SDK log capture disabled)");
-        }
-    }
+    #define X_INSTALL(EosName, OurName, Variant, Category) \
+        INSTALL_##Variant(originalDLL, EosName, Hooks::OurName, Original::OurName);
+    // RESOLVE_ONLY entries skip the install and just GetProcAddress into Original::.
+    #define INSTALL_RESOLVE_ONLY(module, EosName, HookFunc, originalPtr) \
+        do { \
+            if (void* p = ResolveExport(module, #EosName)) { \
+                originalPtr = reinterpret_cast<decltype(originalPtr)>(p); \
+            } else { \
+                Logger::warn("[HOOK] Could not resolve %s (SDK log capture disabled)", #EosName); \
+            } \
+        } while(0)
+    EOS_HOOK_TABLE(X_INSTALL)
+    #undef X_INSTALL
+    #undef INSTALL_RESOLVE_ONLY
+    #undef INSTALL_MANDATORY
+    #undef INSTALL_OPTIONAL
 
     // Store achievement originals for ForceAchievementsConfiguration
     Intercept::SetAchievementsOriginals(
@@ -385,5 +363,7 @@ bool AreHooksActive() {
 void QueueUnlock(const char* id) {
     Intercept::QueueUnlock(id);
 }
+
+#undef EOS_HOOK_TABLE
 
 } // namespace EOS_Hooks
