@@ -14,7 +14,7 @@ LogLevel logLevel = LogLevel::INFO;
 std::wstring logFilepath = L"ScreamAPI.log";
 
 void Logger::init(bool logging, bool loggingDLC, bool loggingAch, bool loggingOvrl,
-				  std::string level, std::wstring filepath){
+				  std::string level, std::wstring filepath, bool appendLog){
 	// Enable logging?
 	isEnabled = logging;
 	isLoggingDLCqueries = loggingDLC;
@@ -40,8 +40,9 @@ void Logger::init(bool logging, bool loggingDLC, bool loggingAch, bool loggingOv
 	// Save the log file path
 	logFilepath = filepath;
 
-	if(isEnabled){
+	if(isEnabled && !appendLog){
 		// Clear the current log file, if it exists.
+		// Skipped when AppendLog=true so per-session logs accumulate.
 		std::ofstream ofs;
 		ofs.open(logFilepath, std::ofstream::out | std::ofstream::trunc);
 		ofs.close();

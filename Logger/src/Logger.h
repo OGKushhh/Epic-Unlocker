@@ -3,7 +3,7 @@
 
 namespace Logger{
 void init(bool logging, bool loggingDLC, bool loggingAch, bool loggingOvrl,
-		  std::string level, std::wstring logFilepath);
+		  std::string level, std::wstring logFilepath, bool appendLog = false);
 
 void debug(const char* const message, ...);
 void info(const char* const message, ...);

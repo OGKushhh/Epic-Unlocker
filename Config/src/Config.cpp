@@ -26,6 +26,11 @@ bool bLogOverlay            = false;
 // diagnostics must explicitly opt in here.
 bool        bEnableSDKLog   = false;
 std::string sSDKLogLevel    = "Warning";
+// AppendLog: append to ScreamAPI.log instead of truncating on launch.
+// TruncateSDKLog: truncate ScreamAPI_SDK.log on launch instead of
+// appending (SDK log defaults to append, which can grow unbounded).
+bool        bAppendLog      = false;
+bool        bTruncateSDKLog = false;
 // Overlay
 bool bLoadIcons      = true;
 bool bCacheIcons     = true;
@@ -91,6 +96,8 @@ std::map<std::string, std::map<std::string, void*>> configMap = {
         // A1: SDK log capture (defaults: EnableSDKLog=false, SDKLogLevel=Warning)
         {"EnableSDKLog",          &bEnableSDKLog},
         {"SDKLogLevel",           &sSDKLogLevel},
+        {"AppendLog",             &bAppendLog},
+        {"TruncateSDKLog",        &bTruncateSDKLog},
     }},
     {"Overlay", {
         {"LoadIcons",        &bLoadIcons},
@@ -204,6 +211,8 @@ bool LogAchievementQueries()      { return bLogAchievementQueries; }
 bool LogOverlay()                 { return bLogOverlay; }
 bool EnableSDKLog()               { return bEnableSDKLog; }
 std::string SDKLogLevel()         { return sSDKLogLevel; }
+bool AppendLog()                  { return bAppendLog; }
+bool TruncateSDKLog()             { return bTruncateSDKLog; }
 bool LoadIcons()                  { return bLoadIcons; }
 bool CacheIcons()                 { return bCacheIcons; }
 bool ValidateIcons()              { return bValidateIcons; }

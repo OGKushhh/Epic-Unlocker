@@ -184,12 +184,22 @@ namespace ScreamAPI
                      Config::LogAchievementQueries(),
                      Config::LogOverlay(),
                      Config::LogLevel(),
-                     logPath.generic_wstring());
+                     logPath.generic_wstring(),
+                     Config::AppendLog());
         PipeServer::SetLogPath(logPath.generic_wstring());
 
         // A1: SDK log path = same dir as ScreamAPI.log, with _SDK suffix.
         auto sdkLogPath = logPath;
         sdkLogPath.replace_filename(L"ScreamAPI_SDK.log");
+        // TruncateSDKLog: opt-in to delete ScreamAPI_SDK.log on launch so the
+        // SDK starts fresh. The SDK's own logger always appends, which can grow
+        // unbounded across sessions; this gives users a clean-slate option.
+        if (Config::TruncateSDKLog()) {
+            std::error_code ec;
+            std::filesystem::remove(sdkLogPath, ec);
+            Logger::info("[SDKLOG] Truncated %ls on launch (TruncateSDKLog=true)",
+                sdkLogPath.c_str());
+        }
         // SetSDKLogPath is now in Intercept:: namespace
         Intercept::SetSDKLogPath(sdkLogPath.generic_wstring());
         Logger::info("[SDKLOG] EOS SDK log will be written to: %ls", sdkLogPath.c_str());
