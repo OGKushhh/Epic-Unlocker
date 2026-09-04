@@ -8,6 +8,7 @@
 #include "PipeServer.h"
 #include "Overlay.h"
 #include "eos_compat.h"
+// <chrono> removed -- using GetTickCount64 instead
 #include <future>
 #include <atomic>
 #include <thread>
@@ -227,12 +228,17 @@ struct TaggedClientData {
         return (reinterpret_cast<uintptr_t>(raw) & 1) != 0;
     }
 };
+
+// Forward declaration -- unlockAchievementViaStatIngest is defined below
+// OnUnlockAchievementsComplete but called from it (Patch C fallback).
+static void unlockAchievementViaStatIngest(Overlay_Achievement* achievement);
+
 static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnlockAchievementsCompleteCallbackInfo* Data) {
     TaggedClientData cd{Data->ClientData};
     bool isStatIngestFollowUp = cd.isTagged();
     auto* achievement = static_cast<Overlay_Achievement*>(cd.untag());
 
-    // Handle null achievement (from unlockAchievementById — hidden achievements
+    // Handle null achievement (from unlockAchievementById -- hidden achievements
     // not in our list). Just log the result, no state to update.
     if (!achievement) {
         if (Data->ResultCode == EOS_EResult::EOS_Success) {
@@ -255,11 +261,51 @@ static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnloc
         // flicker from Locked -> Unlocking -> Unlocked.
         Logger::info("[STAT] Direct unlock returned EOS_NotConfigured (expected) - waiting for server-side evaluation: %s",
             achievement->AchievementId);
+    } else if (!isStatIngestFollowUp && Data->ResultCode == EOS_EResult::EOS_NotConfigured
+               && achievement->StatThresholdsCount > 0 && achievement->StatThresholds != nullptr) {
+        // Patch C: Primary direct unlock returned EOS_NotConfigured, meaning
+        // the SDK says "this achievement is truly stat-gated -- use stat ingest".
+        // Fall back to the stat ingest path. This only happens for REAL
+        // stat-gated achievements (where the stat is a gameplay stat, not a
+        // dummy flag). For "fake" stat-gated achievements, the direct unlock
+        // should have returned EOS_Success above.
+        Logger::info("[ACH] Direct unlock returned EOS_NotConfigured for '%s' -- falling back to stat ingest",
+            achievement->AchievementId);
+        unlockAchievementViaStatIngest(achievement);
     } else {
-        achievement->UnlockState = UnlockState::Locked;
-        Logger::error("Failed to unlock the achievement: %s. Error string: %s",
-            achievement->AchievementId,
-            EOS_EResult_ToString(Data->ResultCode));
+        // Check if this is the v1.19+ ClientPolicyMissingAction error.
+        const char* resultStr = EOS_EResult_ToString(Data->ResultCode);
+        bool isPolicyError = (resultStr && strstr(resultStr, "ClientPolicyMissingAction") != nullptr);
+
+        // Patch C-2: On v1.19+ SDKs, the local client-policy check rejects
+        // direct unlock with EOS_ClientPolicyMissingAction before it ever
+        // reaches the server. The stat ingest path uses a different server
+        // endpoint (EOS_Stats_IngestStat) that may not be subject to the
+        // same local policy gate -- observed empirically: first launch with
+        // EpicFix unlocked 10 achievements on Exophase despite the same
+        // policy error on direct unlock. So when we see
+        // ClientPolicyMissingAction AND the achievement has stat thresholds,
+        // fall through to stat ingest instead of just giving up.
+        if (isPolicyError
+            && achievement->StatThresholdsCount > 0
+            && achievement->StatThresholds != nullptr) {
+            Logger::warn("[ACH] Unlock blocked by client policy for: %s -- trying stat ingest fallback",
+                achievement->AchievementId);
+            unlockAchievementViaStatIngest(achievement);
+        } else if (isPolicyError) {
+            // Policy error but no stat thresholds to fall back to. This is
+            // the genuine auth/policy issue -- we can't reach the server
+            // through either path. State stays Locked.
+            Logger::warn("[ACH] Unlock blocked by client policy for: %s (no stat thresholds to fall back to)",
+                achievement->AchievementId);
+            Logger::warn("[ACH] This is an auth issue, not a tool bug.");
+            achievement->UnlockState = UnlockState::Locked;
+        } else {
+            achievement->UnlockState = UnlockState::Locked;
+            Logger::error("Failed to unlock the achievement: %s. Error string: %s",
+                achievement->AchievementId,
+                EOS_EResult_ToString(Data->ResultCode));
+        }
     }
 }
 
@@ -336,7 +382,7 @@ static void EOS_CALL OnIngestStatComplete(const EOS_Stats_IngestStatCompleteCall
         // GUI/overlay from flickering back to "Locked" before the server-side
         // unlock notification arrives.
         TaggedClientData taggedClientData = TaggedClientData::tag(achievement);
-        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, taggedClientData.raw, OnUnlockAchievementsComplete);
+        EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
     } else {
         achievement->UnlockState = UnlockState::Locked;
         Logger::error("[STAT] Stat ingest FAILED for achievement: %s. Error: %s",
@@ -412,19 +458,26 @@ static void unlockAchievementViaStatIngest(Overlay_Achievement* achievement) {
 void unlockAchievement(Overlay_Achievement* achievement) {
     achievement->UnlockState = UnlockState::Unlocking;
 
-    // ── Stat-gated achievements ───────────────────────────────────────────
-    // If the achievement has stat thresholds, we must ingest the stat(s) past
-    // their threshold(s) to trigger a server-side unlock. Direct unlock via
-    // EOS_Achievements_UnlockAchievements returns EOS_NotConfigured for these.
-    // ─────────────────────────────────────────────────────────────────────
-    if (achievement->StatThresholdsCount > 0 && achievement->StatThresholds != nullptr) {
-        Logger::info("[ACH] Achievement '%s' is stat-gated (%u threshold(s)) — using stat ingest path",
-            achievement->AchievementId, achievement->StatThresholdsCount);
-        unlockAchievementViaStatIngest(achievement);
-        return;
-    }
-
-    // ── Direct unlock path (non-stat-gated achievements) ──────────────────
+    // Patch C: Always try direct unlock FIRST, regardless of StatThresholdsCount.
+    //
+    // Previous code checked StatThresholdsCount > 0 and immediately routed to
+    // stat ingest. This was wrong for "fake" stat-gated achievements (e.g.
+    // Dying Light 2 uses stat "UnlockAchievement<N>" threshold 1 as a flag,
+    // not a real gameplay stat). Those achievements ARE direct-unlockable;
+    // the SDK returns EOS_Success for them when the auth token has the right
+    // policy. Sending them through stat ingest was unnecessary and caused
+    // the server to NOT commit the unlock (because the stat ingest path
+    // requires a different client policy than direct unlock).
+    //
+    // New flow:
+    //   1. Call EOS_Achievements_UnlockAchievements (direct)
+    //   2. OnUnlockAchievementsComplete checks the result:
+    //      - EOS_Success -> done (direct unlock worked)
+    //      - EOS_NotConfigured + StatThresholdsCount > 0 -> fall back to stat ingest
+    //      - EOS_ClientPolicyMissingAction -> warn (auth/policy issue, not our bug)
+    //      - Other errors -> log + re-sync from server
+    //
+    // The stat ingest path is now a FALLBACK, not the default.
     EOS_Achievements_UnlockAchievementsOptions Options = {
         EOS_ACHIEVEMENTS_UNLOCKACHIEVEMENTS_API_LATEST,
         getProductUserId(),
@@ -432,6 +485,12 @@ void unlockAchievement(Overlay_Achievement* achievement) {
         1
     };
 
+    // Use untagged ClientData (bit 0 = 0) to indicate this is a PRIMARY direct
+    // unlock attempt, not a stat ingest follow-up. OnUnlockAchievementsComplete
+    // uses the tag to distinguish "primary direct unlock returned NotConfigured
+    // -> fall back to stat ingest" from "stat ingest follow-up returned
+    // NotConfigured -> expected, wait for server eval".
+    // Pass achievement directly (untagged = bit 0 = 0 = primary direct unlock)
     EOS_Achievements_UnlockAchievements(getHAchievements(), &Options, achievement, OnUnlockAchievementsComplete);
 }
 
