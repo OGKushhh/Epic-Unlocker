@@ -282,7 +282,7 @@ static void EOS_CALL OnUnlockAchievementsComplete(const EOS_Achievements_OnUnloc
         // reaches the server. The stat ingest path uses a different server
         // endpoint (EOS_Stats_IngestStat) that may not be subject to the
         // same local policy gate -- observed empirically: first launch with
-        // EpicFix unlocked 10 achievements on Exophase despite the same
+        // EpicFix unlocked 10 achievements on real backend despite the same
         // policy error on direct unlock. So when we see
         // ClientPolicyMissingAction AND the achievement has stat thresholds,
         // fall through to stat ingest instead of just giving up.
