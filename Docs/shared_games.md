@@ -1,0 +1,785 @@
+﻿# Games Shared Between Exophase and SteamDB EOS SDK List
+
+Games that appear in both **exophase_games.txt** and the **SteamDB "Games using EpicOnlineServices SDK on Steam"** list.
+
+**Total shared games: 779**
+
+- #DRIVE Rally
+- [REDACTED]
+- 1348 Ex Voto
+- 1428: Shadows over Silesia
+- 63 Days
+- A Musical Story
+- A Simple Garbage Sorting Game
+- ABOVE
+- ABRISS - build to destroy
+- Ad Infinitum
+- Aegis Descent
+- Agatha Christie - Death on the Nile
+- Agatha Christie - Murder on the Orient Express
+- Age of Wonders 4
+- Airborne Kingdom
+- Airhead
+- Airplane Racing Championship
+- Airport CEO
+- AK-xolotl: Together
+- Albion Online
+- Alchemist: The Potion Monger
+- Alex Kidd in Miracle World DX
+- Alien: Rogue Incursion Evolved Edition
+- Aliya's Awakening: DOGE 2042
+- Aragami 2
+- ARC Raiders
+- Arcade Paradise
+- Arcadegeddon
+- Arcadia Fallen II
+- ArcRunner
+- ARIE: Moonprayer
+- Arms Race 2
+- Arranger: A Role-Puzzling Adventure
+- Art of Rally
+- Artist Life Simulator
+- Arto
+- Astor: Blade of the Monolith
+- Astrumis - Survive Together
+- Asurya's Embers
+- Asylum Nightmares
+- Atari Mania
+- Atmospheric Titan
+- AWAKEN - Astral Blade
+- Backbeat
+- Backpack Hero
+- Backrooms Break
+- Baimason's Thing Finder Puzzle
+- Bandle Tale: A League of Legends Story
+- Banishers: Ghosts of New Eden
+- Barotrauma
+- Battle Bits
+- Battle Planet - Judgement Day
+- BeachHead Rogue
+- BeamNG.drive
+- Bears in Space
+- Bendy and the Ink Machine
+- Beyond Galaxyland
+- Big Buck Hunter: Ultimate Trophy
+- Big Helmet Heroes
+- BIOMORPH
+- Biped
+- Biped 2
+- Black Book
+- Blacksmith Master
+- Blanc
+- Blasphemous 2
+- Blazing Strike
+- Blindfire
+- Blood Bar Tycoon
+- Blood of Mehran
+- BloodRayne 2: Terminal Cut
+- BloodRayne: Terminal Cut
+- Bloodstained: Ritual of the Night
+- Booze Masters: Freezing Moonshine
+- Bosorka
+- Brave Escape
+- Breachway
+- Breaking Point: Operation Exodus
+- Brew
+- Brigands
+- Bubsy 4D
+- Build a Bridge!
+- Bumble Brawlers
+- Bunny Guys!
+- Burst Hero
+- Bus Bound
+- Busway Islands - Puzzle
+- Butchers Don't Surf!
+- Cafe Owner Simulator
+- Call of Heroes: Tower Defense
+- Candle Knight
+- Capes
+- Car Driving School Simulator
+- Caravan SandWitch
+- Carmageddon: Rogue Shift
+- Carmen Sandiego
+- Carnage Battle Arena
+- Carsick Carventure
+- Cartel Tycoon
+- CarX Drift Racing Online
+- CASE 2: Animatronics Survival
+- Castaway Station
+- Cat Billiards
+- Cat Named Mojave
+- Catizens
+- Cats Ritual
+- Cave Digger 2
+- Chains of Fury
+- Chess Infinity
+- Chess Ultra
+- Chessarama
+- Chiral
+- Chorus
+- Circus Electrique
+- Cities: Skylines
+- Clicker Kingdom
+- Clone Drone in the Danger Zone
+- Collector's Cove
+- Commandos: Origins
+- Conquistador Rex
+- Coreborn
+- Coryphaeus Championships
+- Cosmic Coop
+- CounterAttack: Uprising
+- Couple-Cultivation Saves the World
+- Crash Drive 3
+- Crime Boss: Rockay City
+- Crimson Oath
+- Cronos: The New Dawn
+- Crying Suns
+- Cultivation Magic World
+- Curse of the Deadwood
+- Cyber Clutch: Hot Import Nights
+- Danghost
+- Dark Hours
+- Dark Table CCG
+- Darkblade Ascent
+- Dauntless
+- DAVE THE DIVER
+- DBall
+- Dead by Daylight
+- Dead Island 2
+- Dead Season
+- Deadly Contagion
+- Deadtime Defenders
+- Deadzone: Rogue
+- Deathbound
+- Deathless. The Hero Quest
+- Deceive Inc.
+- Deck of Souls
+- DEMON'S TILT
+- DESTRUCTURE: Among Debris
+- Dice 'n Goblins
+- Dinobreak
+- Diorama Builder
+- Discounty
+- Disney Dreamlight Valley
+- Dizzy Fight
+- DNF Duel
+- Docked
+- Don't Byte Your Tongue
+- Double Dragon Revive
+- Dreadful River
+- Dream magic will
+- Dreamcore
+- Drop Duchy
+- Dros
+- Duriano
+- Dust Fleet
+- Dustborn
+- Dwarven Realms
+- Dying Light: The Beast
+- EARTH DEFENSE FORCE 6
+- EARTH DEFENSE FORCE: WORLD BROTHERS 2
+- EBOLA VILLAGE
+- Edward's Journey
+- Elemental War 2
+- Empires of the Undergrowth
+- Enchanted Portals
+- Endling - Extinction is Forever
+- Engine Evolution 2023
+- Enjoy the Diner
+- Enotria: The Last Song
+- Ertugrul of Ulukayin
+- Escape from Blackwood
+- Eternal Strands
+- Eternights
+- Etrange Overlord
+- Europa Universalis IV
+- Everafter Falls
+- Every Day We Fight
+- Eximius: Seize the Frontline
+- Exographer
+- Extreme Cycling
+- Extreme Cycling Championship
+- Faaast Penguin
+- Fabledom
+- Fall Guys
+- Far Horizon
+- FATAL FURY: City of the Wolves
+- Feudal Baron: King's Land
+- Fireside
+- Fishing Planet
+- Flashback 2
+- FlipScapes
+- Football Manager 2022
+- Football Manager 2023
+- Football Manager 2024
+- Football Manager 26
+- Football Simulator
+- FORECLOSED
+- FORGE SIMULATOR
+- Formula Evolution 2024
+- Fort Solis
+- FRACTALS OF DESTINY
+- FRONT MISSION 2: Remake
+- Frosthaven
+- Frostpunk 2
+- Fuga: Melodies of Steel 3
+- FULL METAL SCHOOLGIRL
+- FUR Squadron
+- Galactic Civilizations IV
+- Gallipoli
+- Gambit Shifter
+- Gangs of Sherwood
+- Garden Witch Life
+- Gas Giant Voyage
+- Gas Station Simulator
+- Gensou -Yumegokochi- Illusion -Dreamlike-
+- Gentoo Rescue
+- GeoJelly
+- GHOST at DAWN
+- Ghostrunner
+- Ghostrunner 2
+- GigaBash
+- Gigantic: Rampage Edition
+- Gloomhaven
+- Gloomy Eyes
+- Go To Sleep
+- Goat Simulator 3
+- GODBREAKERS
+- Godlike Burger
+- Golden Light
+- Golfing in Aether
+- Good Company
+- Gotham Knights
+- Gran Saga
+- Gravitar: Recharged
+- Gravity Oddity
+- Grindstone
+- Grit and Valor - 1949
+- Guards II: Chaos in Hell
+- Guess the Flag!
+- Hades
+- Hades II
+- Hand of Fate 2
+- Happy Lab
+- Hardspace: Shipbreaker
+- Harry Potter: Quidditch Champions
+- Haunted House
+- Haunted House Renovator
+- Havendock
+- HAWKED
+- He is Coming
+- HEAVEN SEEKER ――The Savior of This Cruel World
+- Hell is Others
+- Hell is Us
+- Hell Let Loose
+- Hell Let Loose: Vietnam
+- Hellbreach: Vegas
+- Herdling
+- Heroes of Mount Dragon
+- HEXA-WORLD-3D
+- Hide and Seek
+- High On Life
+- High On Life 2
+- Hirogami
+- Hogwarts Legacy
+- Homeseek
+- Homeworld 3
+- Homeworld: Deserts of Kharak
+- HordeCore
+- HORDEKILL
+- Horror Adventure : Zombie Edition
+- Hotel Renovator
+- Hotel: A Resort Simulator
+- House of Golf 2
+- Howl
+- Hunt and Fight
+- Hunt the Night
+- Hyper Echelon
+- Hyperspaced
+- I Did Not Buy This Ticket
+- I Hate This Place
+- Idle Champions of the Forgotten Realms
+- IHAS
+- Ikonei Island: An Earthlock Adventure
+- ILA: A Frosty Glide
+- Imagine Earth
+- INDIKA
+- Indoor Kickball
+- Indoorlands
+- Infected Mushroom Pinball
+- Infinity Nikki
+- InFlux Redux
+- Inspector Gadget - Mad Time Party
+- Inspector Schmidt - A Bavarian Tale
+- Instants
+- Insurgency: Sandstorm
+- Iragon
+- Isonzo
+- It's a Wrap!
+- IXION
+- JETRUNNER
+- Jotunnslayer: Hordes of Hel
+- Journey Up
+- Joyquarium
+- Junkster
+- Jusant
+- Kainga: Seeds of Civilization
+- Karakage The Sky Shadow
+- KARMA: The Dark World
+- Katana Dragon
+- KeepUp Survival
+- Kena: Bridge of Spirits
+- KIBORG
+- Kids Learn
+- KILL KNIGHT
+- Killer Klowns From Outer Space: The Game
+- Killing Floor 3
+- Kingsgrave
+- KinnikuNeko: SUPER MUSCLE CAT
+- KLETKA
+- Knights of Honor II: Sovereign
+- Knock on the Coffin lid
+- KOOO TO JUMP!
+- Kubikon 3D
+- Kumitantei: Old-School Slaughter
+- Kunkun Terror Express
+- Lab Rat
+- Laika: Aged Through Blood
+- LakeSide
+- Lakeside Bar
+- Land of Mushrooms
+- Lawn Mowing Simulator
+- Lethal Honor - Order of the Apocalypse
+- Life After Death
+- Lifeslide
+- Lil' Guardsman
+- Line Time
+- LOOPMANCER
+- Lords of the Fallen
+- Lost Eidolons
+- Lost Ember: Rekindled Edition
+- Lost in Space: Madness
+- Lost Islands
+- Love Is All Around
+- Love is All Around: Echoes of Yesterday
+- Lucky Goal
+- Lucky Lord: The Coin Pusher of Fate
+- Lumo 2
+- Luna Abyss
+- Lysfanga: The Time Shift Warrior
+- Magical Bakery
+- Magnetism
+- Make Way
+- Manor Lords
+- Marble It Up! Ultra
+- Marvel Rivals
+- MARVEL Tōkon: Fighting Souls
+- Mason: Building Bricks
+- Massira
+- Match Village
+- Matchmaker Agency
+- Medieval Delivery
+- Medieval Knight
+- Mediterranea Inferno
+- Mega Carrier Simulator
+- Metro Simulator 2
+- Miasma Chronicles
+- Midnight Ghost Hunt
+- Military Logistics Simulator
+- MindsEye
+- Mineral
+- Mixtape
+- MOBIUS BAND*
+- Monorail Stories
+- Monospaced Lovers
+- Monster Coming
+- Monster Energy Supercross 25 - The Official Video Game
+- Monster Harvest
+- Monster Outbreak
+- Monsters of Mican
+- Morbid: The Lords of Ire
+- MORDHAU
+- Mortal Online 2
+- Motorbike Evolution 2024
+- Moving Houses
+- MultiVersus
+- My Village Life
+- Mystery in the Office
+- MythForce
+- Nachtmahr
+- Necroking
+- Neon Blood
+- Nickelodeon All-Star Brawl
+- Night Slashers: Remake
+- NINJA REVENGER
+- No Heroes Here 2
+- Noch
+- Nocturnal
+- NOOB - The Factionless
+- Nova Strike
+- Occupy Mars: The Game
+- Office Fight
+- Ogu and the Secret Forest
+- OLD SKOOL RACER
+- Old World
+- Oli One: Sneak In
+- One Hand Clapping
+- One Military Camp
+- One-Eyed Likho
+- Ooze: The Great and Powerful
+- Orcs Must Die! 3
+- Orcs Must Die! Deathtrap
+- ORDER 13
+- Orten Was The Case
+- Ouch! So many beauties!
+- Out of Sight
+- Out of Time
+- Outbreak The Fedora Files: What Lydia Knows
+- Overpass 2
+- PaintBall War 2
+- Paladin's Passage
+- Pandemic Train
+- Parkour Labs
+- Pax Dei
+- PAYDAY 2
+- PAYDAY 3
+- PBA Pro Bowling 2026
+- Pecker
+- People of Note
+- Perennial Order
+- PERISH
+- Phantom Breaker: Battle Grounds Ultimate
+- Phonopolis
+- Pirates Outlaws
+- Pirates Outlaws 2: Heritage
+- Pizza Bandit
+- Poker Club
+- POOLS
+- Poosh XL
+- POPUCOM
+- Port Royale 4
+- Power Vacuum
+- Prehistoric Kingdom
+- Pro Basketball Manager 2024
+- Pro Basketball Manager 2025
+- Project DeepWeb
+- Project Winter
+- Prologue: Go Wayback!
+- Prop Sumo
+- PUBG: BATTLEGROUNDS
+- Punch Club 2: Fast Forward
+- Puppergeist
+- Puzzle Compound
+- Q.U.B.E. 2
+- qomp2
+- Quiztopia : The Ultimate Trivia
+- Quriocity
+- RA RA BOOM
+- Railbreak
+- RAILGRADE
+- Railway Empire 2
+- Rain World
+- Ready or Not
+- Reality Rash
+- Realm of Dread
+- Realpolitiks 3: Earth and Beyond
+- REANIMAL
+- Recollection
+- Redfall
+- Redout 2
+- Redout: Enhanced Edition
+- RedRaptor
+- Relaxing Simulator
+- Reliefs The Time of the Lemures
+- Remains
+- REMATCH
+- RENNSPORT
+- Republic of Pirates
+- Rescue Party: Live!
+- Resonance
+- Return Alive
+- Return to Grace
+- REVEIL
+- Revenge of the Savage Planet
+- RIDE 5
+- RIDE 6
+- Rift Rangers
+- Ring of Pain
+- Rise of Industry
+- Rise of the Third Power
+- Risk of Rain 2
+- Road 96: Mile 0
+- Road Defense: Outsiders
+- RoadCraft
+- Robobeat
+- Roboplant
+- Roboquest
+- Rocco's Island: Ring to End the Pain
+- Rogue Spirit
+- Rogue Waters
+- Rumbral
+- Runbow
+- Russian Village Simulator
+- Ryder
+- S.T.A.L.K.E.R. 2: Heart of Chornobyl
+- Sable
+- SAELIG
+- Sail Forth
+- Saint Kotar
+- Saints Row
+- Samson
+- Satisfactory
+- Saturnalia
+- Save Your Nuts
+- Saviorless
+- Scathe
+- Scientific project: Optic
+- Scott Whiskers in: the Search for Mr. Fumbleclaw
+- Scrapnaut
+- Screamer
+- SeaOrama: World of Shipping
+- Secrets of the Heartbeat
+- Seed of Heroes
+- Sengoku Dynasty
+- Serial Cleaners
+- Settlement Survival
+- Shadow Gambit: The Cursed Crew
+- Shadowverse: Worlds Beyond
+- Shatterline
+- Sherlock Holmes The Awakened
+- Shinogi Chess Club
+- Shred! Remastered
+- Sidecar Evolution 2024
+- Silenced: The House
+- SILENT HILL 2
+- SILENT HILL f
+- SIMULACRA 3
+- Skopje '83
+- Skul: The Hero Slayer
+- Skye Tales
+- SlavicPunk: Oldtimer
+- Slime Rancher 2
+- Smelogs Playground
+- Snakes and Ladders Championship
+- Sniper Elite 5
+- Sniper Elite: Resistance
+- Snowboard Legends
+- Snowmen
+- SOKOCAT - DUNGEON
+- Song of Nunu: A League of Legends Story
+- Songs of Conquest
+- Songs of Silence
+- Sonic Racing: CrossWorlds
+- Sons of Valhalla
+- Sorry We're Closed
+- SOS OPS!
+- Soulmask
+- Souls Of Chronos
+- Soulstice
+- SPACE ELITE FORCE
+- SPACE SMASH
+- Space Will
+- Spellfarers
+- Star Overdrive
+- Star Vortex
+- Stargate: Timekeepers
+- StarSim
+- SteamWorld Build
+- Steel Seed
+- Stellar Interface
+- Still Joking
+- Still Wakes The Deep
+- Stone 4 Souls
+- Stone Age
+- Store It!
+- Strange Antiquities
+- Strange Horticulture
+- Strange House
+- Strawhart
+- Stray Blade
+- Stray Gods: The Roleplaying Musical
+- Streamlands: Defense
+- Styx: Blades of Greed
+- Suicide Squad: Kill the Justice League
+- Sumerian Six
+- Sunderfolk
+- Sunless Sea
+- SUPER CRAZY RHYTHM CASTLE
+- Super Meat Boy 3D
+- Super Meat Boy Forever
+- Super Smash Asteroids
+- Supraland
+- Supraworld
+- Surmount
+- Survival: Fountain of Youth
+- Survive the Fall
+- Surviving the Aftermath
+- Survivor - Castaway Island
+- Sweet Dreams Alex
+- Sword of the Sea
+- Swordship
+- SYNCED
+- Tabletop Playground
+- TACTICAL BANDITS
+- Tad the Lost Explorer
+- Tails of Iron
+- Tails of Iron 2: Whiskers of Winter
+- Tales of the Tiny Planet
+- Tamarak Trail
+- Tannenberg
+- Tattoo Tycoon
+- Taxi Chaos 2
+- Taxi Life: A City Driving Simulator
+- Teenage Mutant Ninja Turtles: Shredder's Revenge
+- Teller's Duty
+- Tenement
+- Tennis Manager 2024
+- Terminator 2D: NO FATE
+- Terraforming Mars
+- TerraTech
+- TerraTech Legion
+- tERRORbane
+- Terrordrome - Reign of the Legends
+- Thank Goodness You're Here!
+- The Adventures of Prince Shiratama ~Climb the mountains~
+- The Alters
+- The Alto Collection
+- The Axis Unseen
+- The Black Pool
+- The Coma 2B: Catacomb
+- The Companion
+- The Crown of Wu
+- THE DARK SIDE OF CECLON
+- THE DESCENT
+- The Devil's Face
+- The Entropy Centre
+- The Fabulous Fear Machine
+- The Future Project
+- The Gardener and the Wild Vines
+- The Gods of the Red Planet
+- The Gravity Trickster
+- The Land Beneath Us
+- The Last Citadel
+- The Legend of Heroes: Trails through Daybreak II
+- The Light in the Darkness
+- The Lost Glitches
+- The Many Pieces of Mr. Coo
+- The Mound: Omen of Cthulhu
+- The Occultist
+- The Oregon Trail
+- The Outlast Trials
+- The Precinct
+- The Riflemen
+- The Scourge | Tai Ương
+- The Siege and the Sandfox
+- The Sinking City
+- The Sisters 2 - Road to Fame
+- The Smurfs - Village Party
+- The Smurfs 2 - The Prisoner of the Green Stone
+- The Star Named EOS
+- The Stone of Madness
+- The Strange City
+- The Talos Principle 2
+- The Tenants
+- The Thaumaturge
+- The Tribe Must Survive
+- The Unbeatable Path
+- Them's Fightin' Herds
+- Thronefall
+- Thunder Ray
+- Time Flies
+- Tintin Reporter - Cigars of the Pharaoh
+- to a T
+- To the Stars
+- Toasterball
+- Together: Moon Escape
+- Top Web Search 23
+- Tormented Soul
+- Tormented Souls 2
+- Tortuga - A Pirate's Tale
+- Total Chaos
+- Total War: PHARAOH DYNASTIES
+- Total War: THREE KINGDOMS
+- Totally Spies! - Cyber Mission
+- Tower Dominion
+- Tower Princess
+- Town of Salem 2
+- Tractor Racers
+- Trail Of Ayash
+- Train Valley 2
+- Train World
+- Tram Simulator Urban Transit
+- Trash Goblin
+- Trepang2
+- Trifox
+- Trilogy of the Moon
+- Trine 2: Complete Story
+- Trine 3: The Artifacts of Power
+- Trine Enchanted Edition
+- Trinity Fusion
+- Tropico 6
+- Troublemaker
+- TT Isle of Man: Ride on the Edge 3
+- Turmoil
+- Two Falls (Nishu Takuatshina)
+- Two Point Hospital
+- Typers Combat
+- Ultros
+- Unholy Village
+- Universe Has No Favorites
+- Unknown Tapes
+- Unrailed!
+- Urbek City Builder
+- URBO
+- Vagnerun
+- Vagrus - The Riven Realms
+- Vambrace: Dungeon Monarch
+- Vampire: The Masquerade - Reckoning of New York
+- Velocity Riders
+- Verdun
+- VIDEOVERSE
+- Viewfinder
+- Virballs
+- Virtual Girlfriend
+- Voidling Bound
+- Voidtrain
+- Waking Tides
+- War Hospital
+- War Mongrels
+- WARSHIFT 2
+- Wartorn
+- We Are Not Alone
+- We Were Here Together
+- We Were Here Too
+- Weed Shop 3
+- Whacking Hell!
+- What is Older?
+- What The Duck
+- while True: learn()
+- While We Wait Here
+- Whiskerwood
+- Who is Abby
+- Whooshy Dragon
+- Who's Your Daddy?!
+- Wildermyth
+- Wildgate
+- WILL: Follow The Light
+- Wilmot Works It Out
+- Winter Survival
+- Witch It
+- Witchfire
+- WITHOUT A HITCH
+- World of blind
+- Worldless
+- Worshippers of Cthulhu
+- Wreckfest
+- WUCHANG: Fallen Feathers
+- Yars: Recharged
+- Ynglet
+- Yooka-Replaylee
+- Ys vs. Trails in the Sky: Alternative Saga
+- Ys X: Nordics
+- Ys X: Proud Nordics
+- Zoeti
+- Zombie Army 4: Dead War
+- Zoo 2: Animal Park
