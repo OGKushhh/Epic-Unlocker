@@ -49,7 +49,7 @@ Launch the game from the **Epic Games Launcher** (not from the .exe directly). T
 
 **Verify it worked**:
 - Game reaches the main menu without "untrusted system file" or "EAC validation failed"
-- Press `Ctrl+Shift+U` to unlock all achievements, or `Shift+F5` to open the overlay
+- Use GUI to unlock achievements, or `Shift+F5` to open the overlay, or use hotkeys.
 
 ---
 
@@ -77,7 +77,7 @@ Some "strict" games enforce EAC's runtime reports and kick you mid-match with "E
 
 Both patches are applied to the SDK file on disk (not in memory), and a `.eosbak` backup is created first so you can always undo with the RESTORE button.
 
-For our confirmed games (Deceive Inc., The Riflemen), **you don't need this** — cert files alone are enough. Click "No" when SMART INSTALL asks about patches. Only use PATCH! if the game kicks you mid-match.
+For our confirmed games (Deceive Inc., The Riflemen), **you don't need this** — cert files alone are enough. Click "No" when SMART INSTALL asks about patches. Only use PATCH! if the game kicks you mid-match. You will probably boot up into lobby only and matchmaking won't work or kick you out anyway.
 
 ---
 
@@ -119,6 +119,7 @@ For broken cases (e.g., MiniRoyale's SteelShield) and testing history, see [`EAC
 ### "Untrusted system file" or "Unknown file version" at startup
 
 EAC's loader is rejecting the SDK. **Fix**: Run **SMART INSTALL** again (or manually copy the cert files into `EasyAntiCheat/Certificates/`). If `Settings.json` was accidentally replaced, use Epic Games Launcher → **Verify** to restore it.
+Worst case scenario is the game validating the EAC with other external methods or has a second anti-cheat like SteelShield.
 
 ### Achievements don't unlock (no error)
 
