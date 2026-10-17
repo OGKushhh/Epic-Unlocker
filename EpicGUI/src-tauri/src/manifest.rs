@@ -94,16 +94,34 @@ pub struct UploadProgress {
 // ── Directory scanning ──────────────────────────────────────────────────────
 
 /// Returns the list of Epic manifest directories to scan.
-/// On Windows, these are:
+///
+/// On Windows (v1 launcher), these are:
 ///   - %PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests\
 ///   - %LOCALAPPDATA%\EpicGamesLauncher\Saved\
-/// On non-Windows, returns an empty vec.
+///
+/// On Windows (v2 launcher — see Docs/EGLv2_Manifest_Format.md):
+///   - %LOCALAPPDATA%\com.epicgames.eglv2\
+///     (contains installations.jsonl + per-game .egstore/ subfolders)
+///
+/// On Linux (v2 launcher — same Tauri app identifier, XDG layout):
+///   - ~/.local/share/com.epicgames.eglv2/
+///     (respects $XDG_DATA_HOME; falls back to ~/.local/share/)
+///
+/// On Linux (v1 launcher under Wine — rare but possible):
+///   - $WINEPREFIX/drive_c/users/<user>/AppData/Local/EpicGamesLauncher/Saved/
+///   (Not scanned automatically — would require detecting the Wine prefix.
+///    Users on Wine should use the Windows build of EpicGUI instead.)
+///
+/// On other platforms (macOS, BSD): returns an empty vec. The Tauri
+/// `app_data_dir()` API would give us the macOS path
+/// (`~/Library/Application Support/com.epicgames.eglv2/`) but EpicGUI
+/// isn't supported on macOS yet — see Docs/macOS_PORT_ANALYSIS.md.
 fn manifest_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let mut dirs = Vec::new();
 
-        // %PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests\
+        // v1: %PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests\
         if let Ok(programdata) = std::env::var("PROGRAMDATA") {
             let p = PathBuf::from(programdata)
                 .join("Epic")
@@ -113,7 +131,7 @@ fn manifest_dirs() -> Vec<PathBuf> {
             dirs.push(p);
         }
 
-        // %LOCALAPPDATA%\EpicGamesLauncher\Saved\
+        // v1: %LOCALAPPDATA%\EpicGamesLauncher\Saved\
         if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
             let p = PathBuf::from(localappdata)
                 .join("EpicGamesLauncher")
@@ -121,10 +139,38 @@ fn manifest_dirs() -> Vec<PathBuf> {
             dirs.push(p);
         }
 
+        // v2: %LOCALAPPDATA%\com.epicgames.eglv2\
+        // The new launcher (Preview, Oct 2026) stores installations.jsonl here.
+        // See Docs/EGLv2_Manifest_Format.md for the full schema.
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            let p = PathBuf::from(localappdata).join("com.epicgames.eglv2");
+            dirs.push(p);
+        }
+
         dirs
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let mut dirs = Vec::new();
+
+        // v2: $XDG_DATA_HOME/com.epicgames.eglv2/ (or ~/.local/share/com.epicgames.eglv2/)
+        // Same Tauri app identifier as Windows v2, just XDG layout.
+        let data_home = std::env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(|| {
+                std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".local").join("share"))
+            });
+
+        if let Some(base) = data_home {
+            dirs.push(base.join("com.epicgames.eglv2"));
+        }
+
+        dirs
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Vec::new()
     }

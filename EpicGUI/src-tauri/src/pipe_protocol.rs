@@ -1,14 +1,29 @@
 // pipe_protocol.rs
 // Direct port of EpicGUI/src/pipe_protocol.h
-// Shared wire format between ScreamAPI DLL (C++) and EpicGUI (Rust).
-// Named pipe: \\.\pipe\EpicGUI
+// Shared wire format between ScreamAPI (DLL on Windows, .so on Linux) and EpicGUI (Rust).
+//
+// Transport:
+//   Windows: named pipe \\.\pipe\EpicGUI
+//   Linux:   Unix domain socket $XDG_RUNTIME_DIR/epicgui.sock (fallback /tmp/epicgui.sock)
+//
+// See Docs/LINUX_PORT_ANALYSIS.md §6 for path selection rationale.
 
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
 // ── Constants ────────────────────────────────────────────────────────────────
+#[cfg(target_os = "windows")]
 pub const EPIC_PIPE_NAME: &str = r"\\.\pipe\EpicGUI";
+
+#[cfg(target_os = "linux")]
+pub const EPIC_PIPE_NAME: &str = "/tmp/epicgui.sock";
+
+// Fallback for non-Windows/non-Linux (macOS, BSD, etc.) — same as Linux.
+// stub_impl.rs will refuse to actually connect on these platforms, but the
+// constant must still exist for compilation.
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+pub const EPIC_PIPE_NAME: &str = "/tmp/epicgui.sock";
 pub const EPIC_MAGIC: u32 = 0xABD04E21;
 pub const EPIC_MAX_PAYLOAD: usize = 8 * 1024 * 1024; // 8 MB sanity cap
 

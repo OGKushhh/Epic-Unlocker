@@ -249,7 +249,7 @@ pub async fn get_log_tail(
             });
         }
     };
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         let last_pos = state.read().await.log_file_pos;
         let inc = read_log_incremental(&path, last_pos).map_err(|e| {
@@ -341,7 +341,7 @@ pub async fn get_log_tail(
             file_size: inc.file_size,
         })
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = app;
         Ok(LogTail {
@@ -359,7 +359,7 @@ pub async fn clear_log(
 ) -> Result<(), String> {
     let path = state.read().await.log_path.clone();
     if let Some(p) = path {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         {
             let _ = std::fs::write(&p, b"");
         }
@@ -397,7 +397,11 @@ pub async fn open_log_externally(
         // want to open this file?" dialog if no association exists.
         open_with_default_app_windows(&p)?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        open_with_default_app_linux(&p)?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = p;
     }
@@ -451,7 +455,17 @@ pub async fn open_sdk_log_externally(
         }
         open_with_default_app_windows(&sdk_path)?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        if !std::path::Path::new(&sdk_path).exists() {
+            return Err(format!(
+                "SDK log file does not exist yet: {sdk_path}\n\
+                Launch a game with Epic Unlocker — the SDK log is created on first connection."
+            ));
+        }
+        open_with_default_app_linux(&sdk_path)?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = sdk_path;
     }
@@ -535,6 +549,45 @@ fn open_with_default_app_windows(path: &str) -> Result<(), String> {
             code => format!("ShellExecuteW failed (code={code}) for {path}"),
         };
         Err(msg)
+    }
+}
+
+/// Launches `path` with its associated application via `xdg-open`.
+/// Equivalent to double-clicking the file in a Linux file manager.
+///
+/// `xdg-open` is the Freedesktop.org standard for "open with default app".
+/// It honors per-user MIME associations (`~/.config/mimeapps.list`) and
+/// falls back to system defaults. Available on every desktop Linux distro
+/// since ~2005; if missing we surface a clear error.
+#[cfg(target_os = "linux")]
+fn open_with_default_app_linux(path: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    // xdg-open spawns the handler detached from our process — we don't want
+    // the GUI to block waiting for the editor to close.
+    let result = Command::new("xdg-open")
+        .arg(path)
+        // Detach from parent so the editor survives even if EpicGUI is closed.
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Common failure: xdg-open not installed (rare on desktop distros,
+            // but possible on minimal/headless systems).
+            let msg = if e.kind() == std::io::ErrorKind::NotFound {
+                format!(
+                    "xdg-open not found — install the 'xdg-utils' package, \
+                     or open the file manually: {path}"
+                )
+            } else {
+                format!("Failed to launch xdg-open for {path}: {e}")
+            };
+            Err(msg)
+        }
     }
 }
 
@@ -783,9 +836,13 @@ struct IncrementalRead {
 ///   - On reset=true, clearing dlc_stats + log_lines first.
 ///
 /// We do NOT use a BufReader here because we want byte-precise positioning
-/// and we read the entire tail in one ReadFile call (matching the C++ impl
+/// and we read the entire tail in one read call (matching the C++ impl
 /// which allocates one buffer of `fs.QuadPart - g_logFilePos` bytes).
-#[cfg(target_os = "windows")]
+///
+/// This function is pure `std::fs` + `std::io` and works on both Windows
+/// and Linux. The CRLF stripping below is a no-op on Linux logs (which use
+/// LF only) — `strip_suffix('\r')` simply returns the line unchanged.
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn read_log_incremental(path: &str, last_pos: u64) -> std::io::Result<IncrementalRead> {
     use std::io::Read;
     let mut file = std::fs::File::open(path)?;

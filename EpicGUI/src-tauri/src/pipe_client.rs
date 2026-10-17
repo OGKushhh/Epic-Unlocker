@@ -31,7 +31,10 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
 #[cfg(target_os = "windows")]
 pub use crate::windows_impl::PipeClient;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+pub use crate::linux_impl::PipeClient;
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub use crate::stub_impl::PipeClient;
 
 /// Shared, mutable slot holding the currently-connected pipe client (or None).

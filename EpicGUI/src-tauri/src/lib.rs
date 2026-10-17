@@ -11,7 +11,9 @@ mod settings;
 mod state;
 #[cfg(target_os = "windows")]
 mod windows_impl;
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+mod linux_impl;
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 mod stub_impl;
 
 use std::sync::Arc;

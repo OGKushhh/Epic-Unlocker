@@ -1,13 +1,36 @@
 // pipe_protocol.h
-// Shared between ScreamAPI DLL and EpicGUI.exe
+// Shared between ScreamAPI (DLL on Windows, .so on Linux) and EpicGUI.
 // Copy this file into both projects.
-// Named pipe: \\.\pipe\EpicGUI
+//
+// Transport:
+//   Windows: named pipe \\.\pipe\EpicGUI
+//   Linux:   Unix domain socket $XDG_RUNTIME_DIR/epicgui.sock
+//            (fallback /tmp/epicgui.sock if XDG_RUNTIME_DIR is unset)
+//
+// See Docs/LINUX_PORT_ANALYSIS.md §6 for path selection rationale.
 
 #pragma once
 #include <cstdint>
 
-#define EPIC_PIPE_NAME      L"\\\\.\\pipe\\EpicGUI"
-#define EPIC_PIPE_NAME_A     "\\\\.\\pipe\\EpicGUI"
+// ── Transport path ──────────────────────────────────────────────────────────
+#if defined(_WIN32)
+    // Win32 named pipe — case-insensitive, kernel-persisted.
+    #define EPIC_PIPE_NAME       L"\\\\.\\pipe\\EpicGUI"
+    #define EPIC_PIPE_NAME_A     "\\\\.\\pipe\\EpicGUI"
+#elif defined(__linux__)
+    // Unix domain socket path. The Rust side (linux_impl.rs) honors
+    // $XDG_RUNTIME_DIR first and falls back to this literal path.
+    // Keep this in sync with pipe_protocol.rs (Linux cfg branch).
+    #define EPIC_PIPE_NAME_A     "/tmp/epicgui.sock"
+    // No wide-char variant on Linux — UTF-8 is native.
+    #define EPIC_PIPE_NAME       EPIC_PIPE_NAME_A
+#else
+    // macOS, BSD, etc. — not yet supported. Define a placeholder so the
+    // header compiles even on unsupported platforms (the ScreamAPI side
+    // will refuse to initialize the socket server).
+    #define EPIC_PIPE_NAME_A     "/tmp/epicgui.sock"
+    #define EPIC_PIPE_NAME       EPIC_PIPE_NAME_A
+#endif
 
 // ── Packet types ──────────────────────────────────────────────────────────────
 enum class PktType : uint8_t {
