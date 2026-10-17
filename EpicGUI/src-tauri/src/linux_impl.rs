@@ -12,8 +12,9 @@
 //     channel, serializing writes so we don't race with the reader.
 //
 // Unlike the Windows impl, we don't need PeekNamedPipe polling — Tokio's
-// async UnixStream is naturally non-blocking, so we can use a real blocking
-// `read_exact` via AsyncReadExt without deadlocking writes.
+// async UnixStream is naturally non-blocking. We split the stream into
+// independent read and write halves (tokio::io::into_split) so reads and
+// writes can proceed concurrently without locking each other out.
 //
 // Socket path: see `EPIC_PIPE_NAME` in pipe_protocol.rs (cfg-gated per OS).
 // The path follows XDG conventions: $XDG_RUNTIME_DIR/epicgui.sock, falling
@@ -23,8 +24,9 @@
 use std::io;
 use std::path::PathBuf;
 use tokio::net::UnixStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, OwnedReadHalf, OwnedWriteHalf};
 
-// IMPORTANT: write_lock MUST be tokio::sync::Mutex, not std::sync::Mutex.
+// IMPORTANT: the mutexes MUST be tokio::sync::Mutex, not std::sync::Mutex.
 // std::sync::MutexGuard is !Send, so holding it across .await points makes
 // the future !Send, which Tauri rejects for command handlers.
 // tokio::sync::MutexGuard is Send (when T: Send), so it's safe to hold
@@ -32,7 +34,6 @@ use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 
 use crate::pipe_protocol::*;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PipeError {
@@ -45,9 +46,15 @@ pub enum PipeError {
 }
 
 pub struct PipeClient {
-    stream: UnixStream,
-    /// Mutex so multiple command-sending tasks can't interleave writes.
-    write_lock: Mutex<()>,
+    /// Read half of the Unix socket. Wrapped in a Mutex so we can call
+    /// `&mut self`-requiring async methods on it from behind `&self`
+    /// (the client is shared via `Arc<PipeClient>` across reader/writer
+    /// tasks). Only the reader task ever locks this.
+    read_half: Mutex<OwnedReadHalf>,
+    /// Write half of the Unix socket. Locked by every `send_command` call
+    /// to serialize writes from multiple command-sending tasks. Reads
+    /// never touch this lock, so reads and writes don't block each other.
+    write_half: Mutex<OwnedWriteHalf>,
 }
 
 impl PipeClient {
@@ -72,9 +79,15 @@ impl PipeClient {
                         path,
                         attempts
                     );
+                    // Split into independent read/write halves. This is the
+                    // standard tokio pattern for sharing a stream across
+                    // reader and writer tasks — the two halves have
+                    // independent locks so reads don't block writes and
+                    // vice versa.
+                    let (read_half, write_half) = stream.into_split();
                     return Ok(PipeClient {
-                        stream,
-                        write_lock: Mutex::new(()),
+                        read_half: Mutex::new(read_half),
+                        write_half: Mutex::new(write_half),
                     });
                 }
                 Err(e) => {
@@ -172,7 +185,6 @@ impl PipeClient {
             pkt_type,
             payload.len()
         );
-        let _guard = self.write_lock.lock().await;
 
         let mut buf = Vec::with_capacity(PktHeader::SIZE + payload.len());
         buf.extend_from_slice(&EPIC_MAGIC.to_le_bytes());
@@ -180,11 +192,13 @@ impl PipeClient {
         buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         buf.extend_from_slice(payload);
 
-        // Use write_all on the async stream — UnixStream is naturally
-        // non-blocking, so we don't need the spawn_blocking dance the
-        // Windows impl uses.
-        self.stream.writable().await?;
-        self.stream.write_all(&buf).await?;
+        // Lock the write half — this serializes concurrent send_command
+        // calls from multiple command tasks. The lock is held only for the
+        // duration of write_all, which is non-blocking on Unix sockets
+        // (kernel buffers are usually large enough to accept a few hundred
+        // bytes instantly).
+        let mut write_half = self.write_half.lock().await;
+        write_half.write_all(&buf).await?;
         log::info!(
             "[linux_impl] write_all succeeded — {} bytes written to socket",
             buf.len()
@@ -195,13 +209,18 @@ impl PipeClient {
     /// Reads exactly `buf.len()` bytes, returning the count.
     /// If the connection closes before any byte is read, returns `Ok(0)`.
     /// If the connection closes mid-read, returns `Err(Closed)`.
+    ///
+    /// Locks `read_half` for the duration of the read. Because reads and
+    /// writes use separate locks, this never blocks a concurrent
+    /// `send_command` call.
     async fn read_exact_or_return_pending(
         &self,
         buf: &mut [u8],
     ) -> Result<usize, PipeError> {
+        let mut read_half = self.read_half.lock().await;
         let mut filled = 0usize;
         while filled < buf.len() {
-            match self.stream.read(&mut buf[filled..]).await {
+            match read_half.read(&mut buf[filled..]).await {
                 Ok(0) => {
                     // EOF — socket closed.
                     if filled == 0 {
@@ -232,9 +251,10 @@ impl PipeClient {
         &self,
         buf: &mut [u8],
     ) -> Result<(), PipeError> {
+        let mut read_half = self.read_half.lock().await;
         let mut filled = 0usize;
         while filled < buf.len() {
-            match self.stream.read(&mut buf[filled..]).await {
+            match read_half.read(&mut buf[filled..]).await {
                 Ok(0) => return Err(PipeError::Closed),
                 Ok(n) => filled += n,
                 Err(e) => return Err(PipeError::Io(e)),
