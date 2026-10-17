@@ -1,0 +1,394 @@
+# Build Epic Unlocker — Linux
+#
+# Companion doc: Docs/LINUX_PORT_ANALYSIS.md
+#
+# This workflow runs alongside the existing Windows workflow (.github/workflows/build.yml).
+# It does NOT replace it. The Windows workflow builds ScreamAPI x86/x64 and EpicGUI Windows;
+# this workflow builds the Linux equivalents as the port progresses.
+#
+# CURRENT STATE (Phase 2 complete):
+#   ✓ epicgui  — builds the Tauri desktop app for Linux (.deb + .AppImage)
+#   ✓ rust-check — verifies all Rust code compiles on Linux target (catches cfg-gate leaks)
+#   ✓ release  — drafts a GitHub release on v* tags (Linux bundle only)
+#
+# FUTURE PHASES (gated on marker files; will activate automatically when those files exist):
+#   ◔ screamapi — when ScreamAPI/CMakeLists.txt exists (Phase 3)
+#   ◔ overlay   — when Overlay/CMakeLists.txt exists (Phase 4)
+#
+# The Windows workflow is unaffected. Pushing to main triggers BOTH workflows in parallel.
+
+name: Build Linux
+
+on:
+  push:
+    branches: [main, linux-port]
+    tags: ['v*']
+    paths:
+      - 'EpicGUI/**'
+      - 'ScreamAPI/**'
+      - 'Overlay/**'
+      - '.github/workflows/build-linux.yml'
+      - 'scripts/smoke-test-*.sh'
+      - 'Docs/LINUX_PORT_ANALYSIS.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'EpicGUI/**'
+      - 'ScreamAPI/**'
+      - 'Overlay/**'
+      - '.github/workflows/build-linux.yml'
+      - 'scripts/smoke-test-*.sh'
+  workflow_dispatch:
+
+# Default: least privilege. The release job escalates to contents: write.
+permissions:
+  contents: read
+
+# Cancel in-flight runs when a new commit lands on the same ref.
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────
+  #  rust-check — fast feedback that Rust code still compiles on Linux
+  # ─────────────────────────────────────────────────────────────────────
+  # This is the cheapest possible Linux signal. Runs first; if it fails,
+  # the expensive EpicGUI build doesn't even start.
+  rust-check:
+    name: Rust check on Linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies (Tauri Linux deps)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'EpicGUI/src-tauri'
+          key: rust-check-${{ runner.os }}
+
+      - name: cargo check (verify cfg gates)
+        working-directory: EpicGUI/src-tauri
+        run: cargo check --target x86_64-unknown-linux-gnu --all-targets
+
+      - name: cargo clippy (lint)
+        working-directory: EpicGUI/src-tauri
+        run: cargo clippy --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+        continue-on-error: true  # informational for now; don't block the build
+
+      - name: cargo fmt --check
+        working-directory: EpicGUI/src-tauri
+        run: cargo fmt -- --check
+        continue-on-error: true  # informational for now
+
+  # ─────────────────────────────────────────────────────────────────────
+  #  EpicGUI — Tauri desktop app
+  # ─────────────────────────────────────────────────────────────────────
+  epicgui:
+    name: EpicGUI (.deb + .AppImage)
+    runs-on: ubuntu-22.04
+    needs: rust-check
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libglib2.0-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            file
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: EpicGUI/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'EpicGUI/src-tauri'
+          key: epicgui-build-${{ runner.os }}
+
+      - name: Install npm dependencies
+        working-directory: EpicGUI
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: EpicGUI
+        run: npm run tauri build
+        env:
+          # Hide the Tauri dev-server console noise in CI
+          TAURI_CI: 'true'
+
+      - name: List build artifacts
+        if: always()
+        run: |
+          echo "### Build artifacts" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          find EpicGUI/src-tauri/target/release/bundle -type f 2>/dev/null | sort >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload .deb artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpicGUI-linux-deb
+          path: EpicGUI/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload .AppImage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EpicGUI-linux-appimage
+          path: EpicGUI/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  #  ScreamAPI — EOS SDK proxy .so (Phase 3)
+  # ─────────────────────────────────────────────────────────────────────
+  # Auto-activates when ScreamAPI/CMakeLists.txt is created.
+  # Until then, the job is skipped — no CI minutes wasted.
+  screamapi:
+    name: ScreamAPI (.so)
+    runs-on: ubuntu-22.04
+    if: hashFiles('ScreamAPI/CMakeLists.txt') != ''
+    needs: rust-check  # don't bother if Rust side is broken
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S ScreamAPI \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_SHARED_LIBS=ON
+
+      - name: Build
+        run: cmake --build build --parallel --verbose
+
+      - name: Smoke test
+        run: |
+          chmod +x scripts/smoke-test-screamapi.sh
+          ./scripts/smoke-test-screamapi.sh build/libScreamAPI.so
+
+      - name: Upload .so artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreamAPI-linux-so
+          path: build/libScreamAPI.so
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  #  Overlay — Vulkan layer (Phase 4)
+  # ─────────────────────────────────────────────────────────────────────
+  # Auto-activates when Overlay/CMakeLists.txt is created.
+  overlay:
+    name: Overlay (Vulkan layer)
+    runs-on: ubuntu-22.04
+    if: hashFiles('Overlay/CMakeLists.txt') != ''
+    needs: rust-check
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libvulkan-dev \
+            libx11-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S Overlay \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel --verbose
+
+      - name: Verify Vulkan layer manifest is valid JSON
+        run: |
+          if [ ! -f build/EpicOverlay.json ]; then
+            echo "::error::EpicOverlay.json not found in build output"
+            exit 1
+          fi
+          python3 -c "import json; json.load(open('build/EpicOverlay.json'))"
+          echo "EpicOverlay.json is valid JSON"
+
+      - name: Upload overlay artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Overlay-linux
+          path: |
+            build/libEpicOverlay.so
+            build/EpicOverlay.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # ─────────────────────────────────────────────────────────────────────
+  #  Release — draft GitHub Release on v* tags
+  # ─────────────────────────────────────────────────────────────────────
+  # Only runs on tagged commits (v*). Drafts a release with the Linux bundle.
+  # The Windows workflow drafts its own release; both can coexist on the same tag.
+  release:
+    name: Draft Linux Release
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [epicgui, screamapi, overlay]
+    # needs.screamapi and needs.overlay are skipped on most tags today (no CMakeLists yet),
+    # but `needs` with skipped jobs = success, so the release still runs.
+    permissions:
+      contents: write
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "### Downloaded artifacts" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          find artifacts -type f 2>/dev/null | sort >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Stage release bundle
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/}"
+          STAGE_DIR="EpicUnlocker-Linux-${VERSION}"
+          mkdir -p "${STAGE_DIR}"
+
+          # EpicGUI installers
+          find artifacts/EpicGUI-linux-deb -name '*.deb' -exec cp {} "${STAGE_DIR}/" \; 2>/dev/null || true
+          find artifacts/EpicGUI-linux-appimage -name '*.AppImage' -exec cp {} "${STAGE_DIR}/" \; 2>/dev/null || true
+
+          # ScreamAPI .so (optional — only present once Phase 3 ships)
+          if [ -f artifacts/ScreamAPI-linux-so/libScreamAPI.so ]; then
+            mkdir -p "${STAGE_DIR}/screamapi"
+            cp artifacts/ScreamAPI-linux-so/libScreamAPI.so "${STAGE_DIR}/screamapi/"
+          fi
+
+          # Overlay (optional — only present once Phase 4 ships)
+          if [ -d artifacts/Overlay-linux ]; then
+            mkdir -p "${STAGE_DIR}/overlay"
+            cp artifacts/Overlay-linux/* "${STAGE_DIR}/overlay/" 2>/dev/null || true
+          fi
+
+          # Generate INSTALL.md pointing at the docs
+          cat > "${STAGE_DIR}/INSTALL.md" <<EOF
+          # Epic Unlocker — Linux ${VERSION}
+
+          See Docs/LINUX_PORT_ANALYSIS.md for installation instructions.
+          See Docs/EGLv2_Manifest_Format.md for v2 launcher manifest support details.
+
+          ## Components in this bundle
+          EOF
+          find "${STAGE_DIR}" -type f -printf '- %P (%s bytes)\n' | sort >> "${STAGE_DIR}/INSTALL.md"
+
+          # Create the tarball
+          tar czf "${STAGE_DIR}.tar.gz" "${STAGE_DIR}"
+          sha256sum "${STAGE_DIR}.tar.gz" > "${STAGE_DIR}.tar.gz.sha256"
+
+          echo "### Release bundle" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh "${STAGE_DIR}.tar.gz" "${STAGE_DIR}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: ${{ github.ref_name }} (Linux)
+          body: |
+            ## Epic Unlocker — Linux ${{ github.ref_name }}
+
+            Automated build from tag ${{ github.ref_name }}.
+
+            **Status:** automated draft release. Review before publishing.
+
+            See `Docs/LINUX_PORT_ANALYSIS.md` for installation instructions and
+            `Docs/EGLv2_Manifest_Format.md` for v2 launcher manifest support.
+
+            ### Bundle contents
+
+            - `EpicUnlocker-Linux-${{ github.ref_name }}.tar.gz` — everything bundled
+            - `*.sha256` — SHA256 checksum for verifying download integrity
+
+            > Note: This release was drafted by the Linux workflow.
+            > The Windows workflow drafts a separate release with Windows binaries
+            > (.dll, EpicGUI.exe) — check the releases page for both.
+          files: |
+            EpicUnlocker-Linux-*.tar.gz
+            EpicUnlocker-Linux-*.tar.gz.sha256
+          fail_on_unmatched_files: true
