@@ -64,8 +64,6 @@ jobs:
   epicgui:
     name: EpicGUI (Tauri)
     runs-on: ubuntu-22.04
-    # Skip if EpicGUI Linux port hasn't started yet (no Tauri config for Linux)
-    if: ${{ hashFiles('EpicGUI/src-tauri/tauri.conf.json') != '' }}
     timeout-minutes: 30
 
     steps:
@@ -158,15 +156,27 @@ jobs:
     name: ScreamAPI (.so)
     runs-on: ubuntu-22.04
     # Enable this job by creating ScreamAPI/CMakeLists.txt
-    # (Phase 3 of LINUX_PORT_ANALYSIS.md)
-    if: ${{ hashFiles('ScreamAPI/CMakeLists.txt') != '' }}
+    # (Phase 3 of LINUX_PORT_ANALYSIS.md). The first step below checks for
+    # that file and sets skip=true if missing, which gates all subsequent steps.
     timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check if ScreamAPI Linux port exists
+        id: check
+        run: |
+          if [ -f ScreamAPI/CMakeLists.txt ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "ScreamAPI/CMakeLists.txt found — running ScreamAPI build"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::ScreamAPI/CMakeLists.txt not found — skipping ScreamAPI job (Phase 3 not started yet)."
+          fi
+
       - name: Install build dependencies
+        if: steps.check.outputs.skip != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -176,6 +186,7 @@ jobs:
             pkg-config
 
       - name: Configure CMake
+        if: steps.check.outputs.skip != 'true'
         run: |
           cmake -B build -S ScreamAPI \
             -G Ninja \
@@ -184,14 +195,17 @@ jobs:
             -DBUILD_SHARED_LIBS=ON
 
       - name: Build
+        if: steps.check.outputs.skip != 'true'
         run: cmake --build build --parallel --verbose
 
       - name: Smoke test — verify .so loads and exports expected symbols
+        if: steps.check.outputs.skip != 'true'
         run: |
           chmod +x scripts/smoke-test-screamapi.sh
           ./scripts/smoke-test-screamapi.sh build/libScreamAPI.so
 
       - name: Upload .so artifact
+        if: steps.check.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ScreamAPI-linux-so
@@ -206,15 +220,27 @@ jobs:
     name: Overlay (Vulkan layer)
     runs-on: ubuntu-22.04
     # Enable this job by creating Overlay/CMakeLists.txt
-    # (Phase 4 of LINUX_PORT_ANALYSIS.md)
-    if: ${{ hashFiles('Overlay/CMakeLists.txt') != '' }}
+    # (Phase 4 of LINUX_PORT_ANALYSIS.md). The first step below checks for
+    # that file and sets skip=true if missing, which gates all subsequent steps.
     timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check if Overlay Linux port exists
+        id: check
+        run: |
+          if [ -f Overlay/CMakeLists.txt ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Overlay/CMakeLists.txt found — running Overlay build"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Overlay/CMakeLists.txt not found — skipping Overlay job (Phase 4 not started yet)."
+          fi
+
       - name: Install build dependencies
+        if: steps.check.outputs.skip != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -231,15 +257,18 @@ jobs:
             libxcursor-dev
 
       - name: Configure CMake
+        if: steps.check.outputs.skip != 'true'
         run: |
           cmake -B build -S Overlay \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
+        if: steps.check.outputs.skip != 'true'
         run: cmake --build build --parallel --verbose
 
       - name: Verify Vulkan layer manifest is valid JSON
+        if: steps.check.outputs.skip != 'true'
         run: |
           if [ ! -f build/EpicOverlay.json ]; then
             echo "::error::EpicOverlay.json not found in build output"
@@ -249,6 +278,7 @@ jobs:
           echo "EpicOverlay.json is valid JSON"
 
       - name: Upload overlay artifact
+        if: steps.check.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: Overlay-linux
