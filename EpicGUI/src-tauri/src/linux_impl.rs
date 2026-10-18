@@ -13,7 +13,7 @@
 //
 // Unlike the Windows impl, we don't need PeekNamedPipe polling — Tokio's
 // async UnixStream is naturally non-blocking. We split the stream into
-// independent read and write halves (tokio::io::into_split) so reads and
+// independent read and write halves (tokio::io::split) so reads and
 // writes can proceed concurrently without locking each other out.
 //
 // Socket path: see `EPIC_PIPE_NAME` in pipe_protocol.rs (cfg-gated per OS).
@@ -24,7 +24,7 @@
 use std::io;
 use std::path::PathBuf;
 use tokio::net::UnixStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, OwnedReadHalf, OwnedWriteHalf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 
 // IMPORTANT: the mutexes MUST be tokio::sync::Mutex, not std::sync::Mutex.
 // std::sync::MutexGuard is !Send, so holding it across .await points makes
@@ -50,11 +50,11 @@ pub struct PipeClient {
     /// `&mut self`-requiring async methods on it from behind `&self`
     /// (the client is shared via `Arc<PipeClient>` across reader/writer
     /// tasks). Only the reader task ever locks this.
-    read_half: Mutex<OwnedReadHalf>,
+    read_half: Mutex<ReadHalf<UnixStream>>,
     /// Write half of the Unix socket. Locked by every `send_command` call
     /// to serialize writes from multiple command-sending tasks. Reads
     /// never touch this lock, so reads and writes don't block each other.
-    write_half: Mutex<OwnedWriteHalf>,
+    write_half: Mutex<WriteHalf<UnixStream>>,
 }
 
 impl PipeClient {
@@ -79,12 +79,12 @@ impl PipeClient {
                         path,
                         attempts
                     );
-                    // Split into independent read/write halves. This is the
-                    // standard tokio pattern for sharing a stream across
-                    // reader and writer tasks — the two halves have
-                    // independent locks so reads don't block writes and
-                    // vice versa.
-                    let (read_half, write_half) = stream.into_split();
+                    // Split into independent read/write halves using
+                    // tokio::io::split(). This is the standard tokio
+                    // pattern for sharing a stream across reader and writer
+                    // tasks — the two halves have independent locks so
+                    // reads don't block writes and vice versa.
+                    let (read_half, write_half) = tokio::io::split(stream);
                     return Ok(PipeClient {
                         read_half: Mutex::new(read_half),
                         write_half: Mutex::new(write_half),
