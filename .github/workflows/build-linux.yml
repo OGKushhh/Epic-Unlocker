@@ -105,6 +105,20 @@ jobs:
         working-directory: EpicGUI/src-tauri
         run: cargo check --target x86_64-unknown-linux-gnu
 
+      - name: Audit Rust dependencies for known CVEs
+        working-directory: EpicGUI/src-tauri
+        # Don't fail the build on audit findings — surface them as warnings
+        # so we get visibility without blocking. Promote to fail-on-warning
+        # once the current backlog is cleared.
+        continue-on-error: true
+        run: |
+          cargo install cargo-audit --quiet || true
+          cargo audit 2>&1 | tee audit-report.txt
+          echo "### Rust dependency audit" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat audit-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
       - name: Install npm dependencies
         working-directory: EpicGUI
         run: npm ci
