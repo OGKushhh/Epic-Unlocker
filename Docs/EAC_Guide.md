@@ -128,3 +128,70 @@ Likely missing `[EAC]` config. Verify `ScreamAPI.ini` has `EACMode = True` and `
 ### Game crashes or infinite loading
 
 Most likely cause: you applied SDK patches to a game that doesn't need them (cert-only works). **Fix**: patcher GUI → **RESTORE**, then launch with cert-only setup. If still hanging, verify the cert files are correctly installed via SMART INSTALL.
+
+---
+
+## Method 2: EAC Wrapper Bypass (skip EAC entirely)
+
+Some games ship an EAC wrapper executable (typically `start_protected_game.exe`) that initializes EAC before launching the actual game. All cert and hash checks happen inside this wrapper — if the wrapper never runs, none of the checks fire.
+
+The bypass works by renaming the game's `.exe` to the wrapper's expected name. When the launcher (EGS/Steam) calls the wrapper path, it actually launches the game directly, skipping EAC entirely.
+
+### When to use this
+
+- SMART INSTALL fails with "untrusted system file" even after installing cert files
+- The game's EAC version rejects the OnlineFix cert (cert CN doesn't match the game's client ID)
+- You don't want to deal with cert files at all and just want achievements to work
+- The game uses `start_protected_game.exe` as its EAC wrapper
+
+### How to use it (via patcher GUI)
+
+1. Open the patcher (`ScreamAPI/tools/eos_patcher.pyw`)
+2. Click **BROWSE** and select any file in the game's directory (e.g. the game `.exe` or `EOSSDK-Win64-Shipping.dll`)
+3. Click **WRAPPER BYPASS** (yellow button)
+4. Confirm the dialog — the patcher will:
+   - Back up `start_protected_game.exe` → `start_protected_game.exe.bak`
+   - Rename the game exe (e.g. `FallGuys_client_game.exe`) → `start_protected_game.exe`
+   - Rename the game's `_Data` folder (e.g. `FallGuys_client_game_Data`) → `start_protected_game_Data`
+5. Launch from EGS/Steam — EAC will be skipped entirely
+6. To undo: click **WRAPPER BYPASS** again — it detects the active bypass and offers to revert
+
+### How to do it manually
+
+If you can't use the patcher GUI, do the renames manually:
+
+```cmd
+cd "C:\Program Files\Epic Games\YourGame"
+
+ren start_protected_game.exe start_protected_game.exe.bak
+ren YourGame_client_game.exe start_protected_game.exe
+ren YourGame_client_game_Data start_protected_game_Data
+```
+
+Launch from EGS/Steam. EAC will not initialize.
+
+To undo:
+```cmd
+ren start_protected_game.exe YourGame_client_game.exe
+ren start_protected_game.exe.bak start_protected_game.exe
+ren start_protected_game_Data YourGame_client_game_Data
+```
+
+### What this does
+
+```
+Normal launch:                          Bypassed launch:
+EGS → start_protected_game.exe          EGS → start_protected_game.exe
+     → EAC initializes                        (actually the game exe)
+     → Cert check (base.cer CN)               → No EAC
+     → Hash check (base.bin)                  → No cert check
+     → Spawns game exe                        → Game loads EOSSDK proxy
+     → Game loads EOSSDK proxy                → Achievements work ✓
+     → Achievements work ✓
+```
+
+### Limitations
+
+- **No EAC protection**: The game runs without anti-cheat. This is fine for single-player achievements but may cause issues with multiplayer games that require EAC for matchmaking.
+- **Game updates may revert the rename**: After a game update, verify the wrapper bypass is still in place.
+- **Not all games use the wrapper pattern**: Some games integrate EAC directly into the game exe. This bypass only works when there's a separate `start_protected_game.exe` wrapper.

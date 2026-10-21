@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-EOS SDK On-Disk Patcher v6 — GUI only (.pyw)
+EOS SDK On-Disk Patcher v7 — GUI only (.pyw)
 =============================================
 Applies two OnlineFix-style binary patches to the EOS SDK DLL on disk:
   Site 1: ShouldUseNullAntiCheatClient() -> TRUE  (EAC silencer)
   Site 2: SubmitServerValidationRequest() -> 0x2EE0 (validation bypass)
+
+Also includes a WRAPPER BYPASS feature that skips EAC's launcher entirely
+by renaming the game exe to match the EAC wrapper's expected name. This
+bypasses all cert and hash checks because EAC never initializes.
 
 NOTE: For confirmed games (Deceive Inc., The Riflemen), patches are OPTIONAL —
       cert files alone work. This tool is only needed for "strict" games that
@@ -251,6 +255,195 @@ def find_eac_folder(sdk_path):
         p = parent
     return None
 
+
+# ─── EAC Wrapper Bypass ──────────────────────────────────────────────────────
+#
+# Some games use an EAC wrapper exe (typically `start_protected_game.exe`)
+# that initializes EAC before spawning the actual game executable. EAC's
+# cert and hash checks all happen inside this wrapper — if the wrapper
+# never runs, none of the checks fire.
+#
+# The bypass works by renaming the game's exe to the wrapper's expected
+# name. When the launcher (EGS/Steam) calls the wrapper path, it actually
+# launches the game directly, skipping EAC entirely.
+#
+# Unity games also require the `_Data` folder to match the exe name, so
+# we rename that too.
+
+EAC_WRAPPER_NAMES = [
+    "start_protected_game.exe",
+    "start_protected_game_init.exe",
+]
+
+
+def find_wrapper_exe(game_dir):
+    """Find the EAC wrapper exe in the game directory.
+    Returns the full path, or None if not found."""
+    for name in EAC_WRAPPER_NAMES:
+        p = os.path.join(game_dir, name)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def find_game_exe(game_dir, wrapper_name):
+    """Find the actual game exe (the one EAC was wrapping).
+    Heuristic: the largest .exe in the directory that isn't the wrapper
+    itself, the EAC launcher, or an uninstaller."""
+    candidates = []
+    for f in os.listdir(game_dir):
+        if not f.lower().endswith('.exe'):
+            continue
+        if f.lower() == wrapper_name.lower():
+            continue
+        fl = f.lower()
+        if any(skip in fl for skip in ['unins', 'setup', 'redist', 'crash',
+                                        'eac', 'easyanticheat', 'launcher',
+                                        'helper', 'updater', 'reporter']):
+            continue
+        full = os.path.join(game_dir, f)
+        try:
+            size = os.path.getsize(full)
+            candidates.append((size, f, full))
+        except OSError:
+            continue
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][2]
+
+
+def apply_wrapper_bypass(game_dir, log=None):
+    """Apply the EAC wrapper bypass by renaming the game exe to the
+    wrapper's expected name. Returns (success, message).
+    Creates .bak backups so the operation can be undone."""
+    def L(msg):
+        if log: log(msg)
+
+    wrapper_path = find_wrapper_exe(game_dir)
+    if not wrapper_path:
+        L("  [!] No EAC wrapper exe found in the game directory")
+        L(f"  [!] Looked for: {', '.join(EAC_WRAPPER_NAMES)}")
+        return False, "No EAC wrapper exe found"
+
+    wrapper_name = os.path.basename(wrapper_path)
+    wrapper_stem = os.path.splitext(wrapper_name)[0]
+    L(f"  [+] Found EAC wrapper: {wrapper_name}")
+
+    game_exe_path = find_game_exe(game_dir, wrapper_name)
+    if not game_exe_path:
+        L("  [!] Could not identify the game exe (no non-wrapper .exe found)")
+        return False, "Could not identify game exe"
+
+    game_exe_name = os.path.basename(game_exe_path)
+    game_exe_stem = os.path.splitext(game_exe_name)[0]
+    L(f"  [+] Found game exe: {game_exe_name}")
+
+    if game_exe_name.lower() == wrapper_name.lower():
+        L("  [*] Wrapper bypass already applied")
+        return True, "Already bypassed"
+
+    # Backup wrapper exe
+    wrapper_bak = wrapper_path + ".bak"
+    if not os.path.exists(wrapper_bak):
+        shutil.copy2(wrapper_path, wrapper_bak)
+        L(f"  [+] Backed up wrapper: {wrapper_name} -> {wrapper_name}.bak")
+    else:
+        L(f"  [+] Wrapper backup exists: {wrapper_name}.bak")
+
+    # Rename wrapper out of the way
+    os.rename(wrapper_path, wrapper_bak)
+    L(f"  [+] Renamed: {wrapper_name} -> {wrapper_name}.bak")
+
+    # Rename game exe to wrapper name
+    os.rename(game_exe_path, wrapper_path)
+    L(f"  [+] Renamed: {game_exe_name} -> {wrapper_name}")
+
+    # Rename _Data folder (Unity requirement)
+    old_data = os.path.join(game_dir, game_exe_stem + "_Data")
+    new_data = os.path.join(game_dir, wrapper_stem + "_Data")
+    if os.path.isdir(old_data):
+        if os.path.isdir(new_data):
+            data_bak = new_data + ".bak"
+            if not os.path.isdir(data_bak):
+                os.rename(new_data, data_bak)
+                L(f"  [+] Backed up wrapper data: {wrapper_stem}_Data -> {wrapper_stem}_Data.bak")
+        os.rename(old_data, new_data)
+        L(f"  [+] Renamed: {game_exe_stem}_Data -> {wrapper_stem}_Data")
+    else:
+        L(f"  [*] No {game_exe_stem}_Data folder found (non-Unity game?) — skipping data rename")
+
+    L("")
+    L("  [+] WRAPPER BYPASS COMPLETE!")
+    L(f"      EAC wrapper backed up as: {wrapper_name}.bak")
+    L(f"      Game exe renamed to: {wrapper_name}")
+    L(f"      Launch from EGS/Steam as normal — EAC will be skipped")
+    return True, f"Bypass applied: {game_exe_name} -> {wrapper_name}"
+
+
+def revert_wrapper_bypass(game_dir, log=None):
+    """Undo the EAC wrapper bypass by restoring the original names."""
+    def L(msg):
+        if log: log(msg)
+
+    wrapper_path = find_wrapper_exe(game_dir)
+    if not wrapper_path:
+        L("  [!] No wrapper exe found — nothing to revert")
+        return False, "No wrapper exe found"
+
+    wrapper_name = os.path.basename(wrapper_path)
+    wrapper_stem = os.path.splitext(wrapper_name)[0]
+    wrapper_bak = wrapper_path + ".bak"
+
+    if not os.path.exists(wrapper_bak):
+        L("  [!] No wrapper backup found — can't restore")
+        return False, "No wrapper backup found"
+
+    # Detect original game exe name from _Data.bak folder
+    game_exe_stem = None
+    for f in os.listdir(game_dir):
+        if f.endswith("_Data.bak"):
+            game_exe_stem = f[:-len("_Data.bak")]
+            break
+
+    if game_exe_stem:
+        game_exe_name = game_exe_stem + ".exe"
+        game_exe_path = os.path.join(game_dir, game_exe_name)
+        L(f"  [+] Detected original game exe: {game_exe_name}")
+    else:
+        L("  [!] Could not auto-detect original game exe name")
+        L("  [!] Manual restore required:")
+        L(f"      1. Rename {wrapper_name} back to your game's exe name")
+        L(f"      2. Rename {wrapper_name}.bak back to {wrapper_name}")
+        L(f"      3. Rename {wrapper_stem}_Data back to <game>_Data")
+        return False, "Could not auto-detect original game exe name"
+
+    # Rename game exe (currently named as wrapper) back to original
+    os.rename(wrapper_path, game_exe_path)
+    L(f"  [+] Renamed: {wrapper_name} -> {game_exe_name}")
+
+    # Restore wrapper from backup
+    os.rename(wrapper_bak, wrapper_path)
+    L(f"  [+] Restored wrapper: {wrapper_name}.bak -> {wrapper_name}")
+
+    # Rename _Data folder back
+    wrapper_data = os.path.join(game_dir, wrapper_stem + "_Data")
+    game_data = os.path.join(game_dir, game_exe_stem + "_Data")
+    if os.path.isdir(wrapper_data):
+        os.rename(wrapper_data, game_data)
+        L(f"  [+] Renamed: {wrapper_stem}_Data -> {game_exe_stem}_Data")
+
+    # Restore wrapper _Data from backup if it exists
+    wrapper_data_bak = wrapper_data + ".bak"
+    if os.path.isdir(wrapper_data_bak):
+        os.rename(wrapper_data_bak, wrapper_data)
+        L(f"  [+] Restored wrapper data: {wrapper_stem}_Data.bak -> {wrapper_stem}_Data")
+
+    L("")
+    L("  [+] WRAPPER BYPASS REVERTED — original layout restored")
+    return True, "Reverted to original layout"
+
+
 def install_bundled_certs(target_dir, log=None):
     """Write the bundled OnlineFix cert files into target_dir (the Certificates folder).
     Returns (success, list_of_installed_files)."""
@@ -316,11 +509,11 @@ FONT_MONO_LOG = ("Consolas", 9)
 class PatcherGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("EOS SDK Patcher v6")
+        self.root.title("EOS SDK Patcher v7")
         self.root.configure(bg=COLOR_BG)
         # Allow horizontal resize so buttons never clip; lock vertical (fixed row count)
         self.root.resizable(True, False)
-        self.root.minsize(640, 1)   # wide enough for all 6 buttons + log
+        self.root.minsize(780, 1)   # wide enough for all 7 buttons + log
 
         self.target_path = None
         self.working = False
@@ -350,7 +543,7 @@ class PatcherGUI:
         header = tk.Frame(inner, bg=COLOR_CARD)
         header.pack(fill="x", padx=22, pady=(20, 0))
 
-        kicker = tk.Label(header, text=">> EOS PATCHER v6", bg=COLOR_CARD,
+        kicker = tk.Label(header, text=">> EOS PATCHER v7", bg=COLOR_CARD,
                           fg=COLOR_PINK, font=FONT_MONO_SMALL)
         kicker.pack(anchor="w")
 
@@ -384,6 +577,10 @@ class PatcherGUI:
         self.btn_restore = self._make_pixel_button(btn_frame, "RESTORE",
                                                      COLOR_PINK, COLOR_SHADOW,
                                                      self._on_restore)
+
+        self.btn_bypass = self._make_pixel_button(btn_frame, "WRAPPER BYPASS",
+                                                    COLOR_YELLOW, COLOR_SHADOW,
+                                                    self._on_wrapper_bypass)
 
         self.btn_clear = self._make_pixel_button(btn_frame, "CLEAR LOG",
                                                    COLOR_DIM, COLOR_SHADOW,
@@ -799,6 +996,123 @@ class PatcherGUI:
             self.working = False
             self.root.after(0, self._enable_buttons)
 
+    def _on_wrapper_bypass(self):
+        """Wrapper bypass: rename game exe to EAC wrapper's name so EAC
+        never initializes. Skips all cert and hash checks."""
+        if self.working:
+            return
+
+        # Need a file selected to locate the game directory
+        if not self.target_path:
+            path = filedialog.askopenfilename(
+                title="Select any file in the game's directory (e.g. the game .exe or EOSSDK DLL)",
+                filetypes=[("Game files", "*.exe *.dll"), ("All files", "*.*")]
+            )
+            if not path:
+                return
+            self.target_path = path
+            short = os.path.basename(path)
+            self.file_var.set(f">> FILE: {short}")
+            self._log_line(f">> FILE SELECTED: {short}")
+            self._log_line(f"   Path: {path}")
+
+        game_dir = os.path.dirname(os.path.abspath(self.target_path))
+
+        # Check if bypass is already applied (look for wrapper .bak)
+        wrapper_path = find_wrapper_exe(game_dir)
+        wrapper_bak = wrapper_path + ".bak" if wrapper_path else None
+        is_bypassed = wrapper_bak and os.path.exists(wrapper_bak)
+
+        import tkinter.messagebox as mb
+
+        if is_bypassed:
+            # Offer to revert
+            do_revert = mb.askyesno(
+                "Wrapper Bypass — Revert?",
+                f"Wrapper bypass is currently ACTIVE in:\n{game_dir}\n\n"
+                f"The EAC wrapper was backed up to {os.path.basename(wrapper_bak)}.\n\n"
+                f"Do you want to REVERT (restore original layout)?"
+            )
+            if not do_revert:
+                return
+            self.working = True
+            self._disable_buttons()
+            self._set_status(">> REVERTING WRAPPER BYPASS...", COLOR_YELLOW)
+            self._set_progress(0.5, ">> REVERTING...", "reverting")
+            self._log_line("")
+            self._log_line("=" * 50)
+            self._log_line(">> REVERTING WRAPPER BYPASS")
+            threading.Thread(target=self._do_wrapper_revert, args=(game_dir,), daemon=True).start()
+        else:
+            # Apply bypass
+            do_bypass = mb.askyesno(
+                "Wrapper Bypass — Apply?",
+                f"This will rename the game's exe to match the EAC wrapper's name\n"
+                f"in:\n{game_dir}\n\n"
+                f"EAC will be completely skipped — no cert or hash checks.\n"
+                f"Backups (.bak) will be created so you can undo this later.\n\n"
+                f"Apply wrapper bypass?"
+            )
+            if not do_bypass:
+                return
+            self.working = True
+            self._disable_buttons()
+            self._set_status(">> APPLYING WRAPPER BYPASS...", COLOR_YELLOW)
+            self._set_progress(0.3, ">> RENAMING FILES...", "bypassing")
+            self._log_line("")
+            self._log_line("=" * 50)
+            self._log_line(">> WRAPPER BYPASS: Skip EAC by renaming game exe")
+            threading.Thread(target=self._do_wrapper_bypass, args=(game_dir,), daemon=True).start()
+
+    def _do_wrapper_bypass(self, game_dir):
+        """Background thread: apply wrapper bypass."""
+        try:
+            self.root.after(0, lambda: self._set_progress(0.5, ">> RENAMING FILES...", "renaming"))
+            time.sleep(0.1)
+            ok, msg = apply_wrapper_bypass(game_dir, log=self._log_line)
+            if ok:
+                self.root.after(0, lambda: self._set_progress(1.0, ">> BYPASS APPLIED!", "done"))
+                self.root.after(0, lambda: self._set_status(">> WRAPPER BYPASS ACTIVE", COLOR_GREEN))
+                self._log_line("")
+                self._log_line(">> Launch from EGS/Steam — EAC will be skipped entirely.")
+                self._log_line(">> Click WRAPPER BYPASS again to revert.")
+            else:
+                self.root.after(0, lambda: self._set_progress(0.0, ">> BYPASS FAILED", "error"))
+                self.root.after(0, lambda: self._set_status(f">> FAILED: {msg}", COLOR_RED))
+        except Exception as e:
+            self.root.after(0, lambda: self._set_progress(0.0, ">> ERROR", "error"))
+            self.root.after(0, lambda: self._set_status(f">> ERROR: {e}", COLOR_RED))
+            self._log_line(f">> ERROR: {e}")
+            import traceback
+            self._log_line(traceback.format_exc())
+        finally:
+            self.working = False
+            self.root.after(0, self._enable_buttons)
+
+    def _do_wrapper_revert(self, game_dir):
+        """Background thread: revert wrapper bypass."""
+        try:
+            self.root.after(0, lambda: self._set_progress(0.7, ">> RESTORING FILES...", "restoring"))
+            time.sleep(0.1)
+            ok, msg = revert_wrapper_bypass(game_dir, log=self._log_line)
+            if ok:
+                self.root.after(0, lambda: self._set_progress(1.0, ">> REVERTED!", "done"))
+                self.root.after(0, lambda: self._set_status(">> WRAPPER BYPASS REVERTED", COLOR_GREEN))
+                self._log_line("")
+                self._log_line(">> Original layout restored — EAC will run normally on next launch.")
+            else:
+                self.root.after(0, lambda: self._set_progress(0.0, ">> REVERT FAILED", "error"))
+                self.root.after(0, lambda: self._set_status(f">> FAILED: {msg}", COLOR_RED))
+        except Exception as e:
+            self.root.after(0, lambda: self._set_progress(0.0, ">> ERROR", "error"))
+            self.root.after(0, lambda: self._set_status(f">> ERROR: {e}", COLOR_RED))
+            self._log_line(f">> ERROR: {e}")
+            import traceback
+            self._log_line(traceback.format_exc())
+        finally:
+            self.working = False
+            self.root.after(0, self._enable_buttons)
+
     def _on_restore(self):
         if self.working or not self.target_path:
             return
@@ -833,12 +1147,13 @@ class PatcherGUI:
             self._enable_buttons()
 
     def _disable_buttons(self):
-        for btn in (self.btn_browse, self.btn_smart, self.btn_patch, self.btn_restore, self.btn_clear, self.btn_quit):
+        for btn in (self.btn_browse, self.btn_smart, self.btn_patch, self.btn_restore, self.btn_bypass, self.btn_clear, self.btn_quit):
             btn.configure(state="disabled")
 
     def _enable_buttons(self):
         self.btn_browse.configure(state="normal")
         self.btn_smart.configure(state="normal")
+        self.btn_bypass.configure(state="normal")
         self.btn_clear.configure(state="normal")
         self.btn_quit.configure(state="normal")
         if self.target_path:
