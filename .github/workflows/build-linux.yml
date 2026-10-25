@@ -377,25 +377,11 @@ jobs:
           ls -lh "${STAGE_DIR}.tar.gz" "${STAGE_DIR}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Create draft release
+      - name: Upload Linux artifacts to release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          name: ${{ github.ref_name }} (Linux)
-          body: |
-            ## Epic Unlocker — Linux ${{ github.ref_name }}
-
-            Automated build from tag ${{ github.ref_name }}.
-
-            **Status:** automated draft release. Review before publishing.
-
-            See `Docs/LINUX_PORT_ANALYSIS.md` for installation instructions and
-            `Docs/EGLv2_Manifest_Format.md` for v2 launcher manifest support.
-
-            ### Bundle contents
-
-            - `EpicUnlocker-Linux-${{ github.ref_name }}.tar.gz` — everything bundled
-            - `*.sha256` — SHA256 checksum for verifying download integrity
+          # Only upload files — don't overwrite existing release name/body
+          preserve_existing: true
           files: |
             EpicUnlocker-Linux-*.tar.gz
             EpicUnlocker-Linux-*.tar.gz.sha256
