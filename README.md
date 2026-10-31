@@ -98,8 +98,7 @@ You have two options:
 Press **`Shift+F5`** to toggle the overlay. Search, filter, and unlock achievements directly from inside the game.
 
 > ⚠️ **Fullscreen Exclusive games** will minimize when you click overlay buttons. Either:
-> - Switch the game to **Borderless Windowed** mode, or
-> - **Double-click** an achievement in the list to unlock it (no minimize).
+> - Switch the game to **Borderless Windowed** mode.
 
 #### Using the External GUI
 Launch `EpicGUI.exe` while the game is running. The GUI connects automatically and shows all achievements. Press on unlock in any achievement to unlock it instantly.
