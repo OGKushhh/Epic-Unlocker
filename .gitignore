@@ -351,3 +351,4 @@ EpicGUI/src-tauri/desktop-schema.json
 EpicGUI/src-tauri/windows-schema.json
 EpicGUI/.vite/
 EpicGUI/MANIFEST_API_KEY.txt
+EpicGUI/src-tauri/gen/
